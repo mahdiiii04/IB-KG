@@ -24,6 +24,7 @@ class TextModel:
 class OBSRVR:
 
     def __init__(self, location_model, inventory_model, surroundings_model, tokenizer):
+        #Initilialize the three used models
         self.location_model = TextModel(location_model, tokenizer)
         self.inventory_model = TextModel(inventory_model, tokenizer)
         self.surroundings_model = TextModel(surroundings_model, tokenizer)
@@ -38,15 +39,17 @@ class OBSRVR:
         location = self.location_model.generate_output(description)
         loc_triplet = [('you', 'in', location)]
 
+        # Surroundings model expeted to return surrounding objects seperated by |
         surr_objects = self.surroundings_model.generate_output(description).split('|')
         surr_triplets = [(obj, 'in', location) for obj in surr_objects if obj != '']
 
         triplets = loc_triplet + inv_triplets + surr_triplets
 
+        # If location changes, we add the direction we moved in
         if location != previous_location:
             direction = self.extract_direction(previous_act)
             if direction:
-                triplets.append((location, direction, previous_location))
+                triplets.append((location, f'{direction}_of', previous_location))
 
         return triplets
 

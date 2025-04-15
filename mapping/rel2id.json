@@ -1,0 +1,18 @@
+{
+    "in" : 0,
+    "have" : 1,
+    "north_of" : 2,
+    "south_of" : 3,
+    "east_of" : 4,
+    "west_of" : 5,
+   "northwest_of" : 6,
+    "northeast_of" : 7,
+    "southwest_of" : 8,
+    "southeast_of" : 9,
+    "up_of" : 10,
+    "down_of" : 11,
+    "capable_of" : 12,
+    "has_context" : 13,
+    "used_for" : 14,
+    "has_property" : 15
+}
