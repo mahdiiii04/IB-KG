@@ -27,8 +27,6 @@ class Grapher:
                     self.node_mapping[head] = len(self.node_mapping)
                 if tail not in self.node_mapping:
                     self.node_mapping[tail] = len(self.node_mapping)
-                if relation not in self.rel_mapping:
-                    self.rel_mapping[relation] = len(self.rel_mapping)
 
 
     def get_nodes(self):
@@ -47,6 +45,24 @@ class Grapher:
     
     def get_relations_mapped(self):
         return [self.rel_mapping[r] for _, r, _ in self.triplets]
+    
+    def get_nodes_mapped(self):
+        return [self.node_mapping[n] for n in self.get_nodes()]
+    
+    def build_graph(self):
+        import dgl
+        import torch
+
+        src = self.get_sources_mapped()
+        dst = self.get_destinations_mapped()
+        rel = self.get_relations_mapped()
+
+        g = dgl.graph((src, dst))
+        g.edata['rel_type'] = torch.tensor(rel)
+
+        return g
+
+
 
     def draw(self):
         net = Network(directed=True)
