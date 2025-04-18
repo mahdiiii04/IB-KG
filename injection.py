@@ -16,7 +16,15 @@ class ConceptGraph:
         self.triplets = triplets  
         for head, relation, tail in triplets:
             self.graph[head].append((head, relation, tail))
-            self.graph[tail].append((head, relation, tail))
+            self.graph[tail].append((head, relation, tail))  # optional, may keep if you want reverse lookups
 
     def get_neighbors(self, node):
-        return self.graph.get(node, [])
+        """Return only triplets where the node is the head (subject)."""
+        return [t for t in self.graph.get(node, []) if t[0] == node]
+
+    def get_triplets_for_nodes(self, nodes):
+        """Return all triplets where each node in the list is the head."""
+        results = []
+        for node in nodes:
+            results.extend(self.get_neighbors(node))
+        return results

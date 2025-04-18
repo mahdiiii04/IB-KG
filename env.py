@@ -15,13 +15,13 @@ class TextEnv:
         reward = 0
         done = False
 
-        self.state.replace('\n', ' ')
+        self.state = self.state.replace('\n', ' ')
 
         inv_desc, _, _, _ = self.env.step("inventory")
-        inv_desc.replace('\n', ' ')
+        inv_desc = inv_desc.replace('\n', ' ')
 
         description, _, _, _ = self.env.step("look")
-        description.replace('\n', ' ')
+        description = description.replace('\n', ' ')
 
         return  {
             'observation': self.state,
@@ -50,8 +50,5 @@ class TextEnv:
             'done': done
         }
     
-    def get_admissible_actions(self, objs):
-        objs_ids = [self.vocab_mapping[obj] for obj in objs if obj in self.vocab_mapping]
-        possible_actions = self.action_generator.generate_template_actions(objs, objs_ids)
-        admissbile = self.env.find_valid_actions(possible_actions)
-        return admissbile
+    def get_admissible_actions(self):
+        return self.env.get_valid_actions()

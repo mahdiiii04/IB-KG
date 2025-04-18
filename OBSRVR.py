@@ -25,10 +25,11 @@ class OBSRVR:
         triplets = loc_triplet + inv_triplets + surr_triplets
 
         # If location changes, we add the direction we moved in
-        if location != previous_location:
-            direction = self.extract_direction(previous_act)
-            if direction:
-                triplets.append((location, f'{direction}_of', previous_location))
+        if previous_location:
+            if location != previous_location:
+                direction = self.extract_direction(previous_act)
+                if direction:
+                    triplets.append((location, f'{direction}_of', previous_location))
 
         return triplets
 

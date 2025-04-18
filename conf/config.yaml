@@ -3,4 +3,22 @@ obsrvr :
   inventory_model : "MoncefAn/inventory/inventory_t5_model_v3"
   surroundings_model : "YasserSai001/surroundings-detector"
   tokenizer_model : "t5-small"
+cn:
+  concept_net_file : "CNData/filtered_triples.json"
+env:
+  rom_file : "ROMS/zork1.z5"
+  node_mapping_file : "mapping/zork1_node2id.json"
+actor:
+  embedding_model : "bert-base-uncased"
+  tokenizer_model : "bert-base-uncased"
+train:
+  max_nodes : 200
+  feat_dim : 300
+  hidden_dim : 512
+  repr_dim : 512
+  latent_dim : 256
+  beta : 1.0
+  epsilon : 0.1
+  learning_rate : 0.001
+  device : "cpu"
 
