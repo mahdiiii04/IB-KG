@@ -27,7 +27,7 @@ class TextModel:
 
 class RGCN(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, num_rels):
-        super(RGCN, self).init()
+        super(RGCN, self).__init__()
         self.layer1 = RelGraphConv(in_dim, hidden_dim, num_rels, "sum")
         self.layer1 = RelGraphConv(hidden_dim, out_dim, num_rels, "sum")
 

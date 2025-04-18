@@ -11,7 +11,7 @@ class TextEnv:
         self.action_generator =  TemplateActionGenerator(self.env.bindings)
 
     def reset(self):
-        self.state = self.env.reset()
+        self.state, _, _, _ = self.env.reset()
         reward = 0
         done = False
 
