@@ -1,5 +1,6 @@
 obsrvr :
   location_model : ""
-  inventory_model : "/MoncefAn/inventory/inventory_t5_model_v3"
+  inventory_model : "MoncefAn/inventory/inventory_t5_model_v3"
   surroundings_model : "YasserSai001/surroundings-detector"
+  tokenizer_model : "t5-small"
 
