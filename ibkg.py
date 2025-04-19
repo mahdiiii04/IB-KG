@@ -28,7 +28,7 @@ with open(env_params['node_mapping_file'], 'r') as f:
 class IBKG_Trainer:
     def __init__(self):
 
-        self.device = torch.device(config['system']['device'] if torch.cuda.is_available() and config['system']['device'] == "cuda" else "cpu")
+        self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
         
         self.ibkg = IBKG(
             max_nodes=train_params['max_nodes'],
