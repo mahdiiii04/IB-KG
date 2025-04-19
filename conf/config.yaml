@@ -1,5 +1,5 @@
 obsrvr :
-  location_model : ""
+  location_model : "mahdiiiii04/obsrvr-locator"
   inventory_model : "MoncefAn/inventory/inventory_t5_model_v3"
   surroundings_model : "YasserSai001/surroundings-detector"
   tokenizer_model : "t5-small"
@@ -20,5 +20,5 @@ train:
   beta : 1.0
   epsilon : 0.1
   learning_rate : 0.001
-  device : "cpu"
+  device : "cuda"
 

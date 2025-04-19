@@ -12,15 +12,16 @@ class OBSRVR:
     def generate_triplets(self, observation, description, inv_desc, previous_act, previous_location):
 
         # Inventory model expeted to return items in inventory seperated by |
-        inv_items = self.inventory_model.generate_output(inv_desc).split('|')
-        inv_triplets = [('you', 'have', item) for item in inv_items if item != '']
+        inv_items = self.inventory_model.generate_output(inv_desc.lower()).split('|')
+        inv_triplets = [('you', 'have', item.lower()) for item in inv_items if item != '']
 
-        location = self.location_model.generate_output(description)
+        location = self.location_model.generate_output(description.lower()).lower()
+        location = self.extract_core_phrase(location)
         loc_triplet = [('you', 'in', location)]
 
         # Surroundings model expeted to return surrounding objects seperated by |
-        surr_objects = self.surroundings_model.generate_output(description).split('|')
-        surr_triplets = [(obj, 'in', location) for obj in surr_objects if obj != '']
+        surr_objects = self.surroundings_model.generate_output(description.lower()).split('|')
+        surr_triplets = [(obj.lower(), 'in', location) for obj in surr_objects if obj != '']
 
         triplets = loc_triplet + inv_triplets + surr_triplets
 
@@ -50,7 +51,10 @@ class OBSRVR:
 
             return normalization.get(dir_raw, dir_raw) 
         return None
-
+    
+    def extract_core_phrase(self, text):
+        pattern = r"^(in|on|at|to|by|from|with|about|into|over|after|under|above|around)\s+(a|an|the)\s+"
+        return re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
 
 
 
