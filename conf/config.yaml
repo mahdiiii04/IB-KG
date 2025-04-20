@@ -12,13 +12,12 @@ actor:
   embedding_model : "bert-base-uncased"
   tokenizer_model : "bert-base-uncased"
 train:
-  max_nodes : 600
+  max_nodes : 10000
   feat_dim : 300
   hidden_dim : 512
   repr_dim : 512
   latent_dim : 256
-  beta : 1.0
+  beta : 0.2
   epsilon : 0.1
-  learning_rate : 0.001
+  learning_rate : 0.00001
   device : "cuda"
-

@@ -62,6 +62,7 @@ class IBEncoder(nn.Module):
     def forward(self, x):
         mu = self.fc_mu(x)
         logvar = self.fc_var(x)
+        logvar = torch.clamp(logvar, min=-10, max=10)
 
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
@@ -70,13 +71,13 @@ class IBEncoder(nn.Module):
         return z, mu, logvar
     
 class ActionEncoder(nn.Module):
-    def __init__(self, emb_dim, latent_dim, model_name, tokenizer_name, device):
+    def __init__(self, latent_dim, model_name, tokenizer_name, device):
         super(ActionEncoder, self).__init__()
 
         self.device = device
         self.model = BertModel.from_pretrained(model_name)
         self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
-        self.projector = nn.Linear(emb_dim, latent_dim)
+        self.projector = nn.Linear(768, latent_dim)
 
 
     def forward(self, actions):
@@ -91,20 +92,21 @@ class ActionEncoder(nn.Module):
         return projected_embeddings
     
 class ActionDecoder(nn.Module):
-    def __init__(self, latent_dim, emb_dim, model_name, tokenizer_name, device):
+    def __init__(self, latent_dim, model_name, tokenizer_name, device):
         super(ActionDecoder, self).__init__()
 
         self.device = device
 
-        self.encoder = ActionEncoder(emb_dim, latent_dim, model_name, tokenizer_name, device).to(device)
+        self.encoder = ActionEncoder(latent_dim, model_name, tokenizer_name, device).to(device)
 
 
     def forward(self, valid_actions, zt):
 
         actions_embeddings = self.encoder.forward(valid_actions)
 
-        actions_norm = F.normalize(actions_embeddings, p=2, dim=1)
-        zt_norm = F.normalize(zt, p=2, dim=0)
+        eps = 1e-8
+        actions_norm = F.normalize(actions_embeddings + eps, p=2, dim=1)
+        zt_norm = F.normalize(zt + eps, p=2, dim=0)
 
         scores = torch.matmul(actions_norm, zt_norm)        
 
@@ -112,6 +114,7 @@ class ActionDecoder(nn.Module):
     
     def get_action(self, valid_actions, zt, epsilon=0.1):
         scores = self.forward(valid_actions, zt)
+        scores = torch.where(torch.isfinite(scores), scores, torch.tensor(-1e8, device=scores.device))
 
         probs = F.softmax(scores, dim=0)
         log_probs = F.log_softmax(scores, dim=0)
@@ -137,7 +140,7 @@ class IBKG(nn.Module):
         self.ib_encoder = IBEncoder(repr_dim, latent_dim).to(device)
         self.prediction_encoder = IBEncoder(repr_dim, latent_dim).to(device)
 
-        self.action_decoder = ActionDecoder(latent_dim, repr_dim, actor_model_name, actor_tokenizer_name, device).to(device)
+        self.action_decoder = ActionDecoder(latent_dim, actor_model_name, actor_tokenizer_name, device).to(device)
 
     def forward(self, valid_actions, beta=1.0, epsilon=0.1):
         
@@ -169,4 +172,5 @@ class IBKG(nn.Module):
         return ib_loss, action, log_prob
 
     def kl_divergence(self, mu, logvar):
-        return 0.5 * torch.sum(torch.exp(logvar) + mu**2 - 1 - logvar)
+        var = torch.exp(logvar) + 1e-6  # Prevent division by zero
+        return 0.5 * torch.sum(var + mu**2 - 1 - logvar)

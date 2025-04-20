@@ -6,7 +6,11 @@ class Grapher:
         self.locations = []
         self.node_mapping = node_mapping
         self.rel_mapping = rel_mapping
-        
+
+    def reset(self):
+        self.triplets = []
+        self.locations = []
+     
     def update(self, triplets):
         '''
         add the triplets to the graph
