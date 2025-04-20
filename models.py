@@ -126,7 +126,7 @@ class IBKG(nn.Module):
         super(IBKG, self).__init__()
         self.device = device
 
-        self.kg = Grapher(node_mapping={}, rel_mapping=rel2id)
+        self.kg = Grapher(node_mapping=node2id, rel_mapping=rel2id)
         self.node_embedding = nn.Embedding(max_nodes, feat_dim).to(device)
         self.rgcn = RGCN(feat_dim, hidden_dim, repr_dim, num_rels=len(rel2id)).to(device)
         self.attention = AttentionPooling(repr_dim).to(device)
@@ -138,7 +138,7 @@ class IBKG(nn.Module):
 
     def forward(self, valid_actions, beta=1.0, epsilon=0.1):
         
-        node_ids = self.kg.get_nodes_mapped()
+        node_ids = list(range(len(self.kg.node_mapping)))
         node_ids_tensor = torch.LongTensor(node_ids).to(self.device)
         node_feat = self.node_embedding(node_ids_tensor)
 

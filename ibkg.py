@@ -29,6 +29,8 @@ class IBKG_Trainer:
     def __init__(self):
 
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
+
+        node2id = {'you' : 0}
         
         self.ibkg = IBKG(
             max_nodes=train_params['max_nodes'],
