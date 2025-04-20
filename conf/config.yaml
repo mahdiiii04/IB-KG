@@ -12,7 +12,7 @@ actor:
   embedding_model : "bert-base-uncased"
   tokenizer_model : "bert-base-uncased"
 train:
-  max_nodes : 200
+  max_nodes : 600
   feat_dim : 300
   hidden_dim : 512
   repr_dim : 512

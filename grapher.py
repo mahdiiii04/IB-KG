@@ -58,21 +58,9 @@ class Grapher:
         rel = self.get_relations_mapped()
 
         num_nodes = len(self.node_mapping)
-        print("\n--- Node Mapping ---")
-        print(f"Total mapped nodes: {num_nodes}")
-        print("Node Mapping Entries:")
-        for node, idx in self.node_mapping.items():
-            print(f"  Node: {node} → Index: {idx}")
 
         g = dgl.graph((src, dst), num_nodes=num_nodes)
         g.edata['rel_type'] = torch.tensor(rel)
-
-        print("\n--- Graph Nodes ---")
-        print(f"Graph has {g.num_nodes()} nodes (indices 0 to {g.num_nodes()-1})")
-        print("Graph edges (mapped indices):")
-        print("  Sources:", src)
-        print("  Destinations:", dst)
-        print("  Relations:", rel)
 
         return g
 
