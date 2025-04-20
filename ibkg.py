@@ -39,24 +39,28 @@ class IBKG_Trainer:
             repr_dim=train_params['repr_dim'],
             latent_dim=train_params['latent_dim'],
             actor_model_name=actor_params['embedding_model'],
-            actor_tokenizer_name=actor_params['tokenizer_model']
+            actor_tokenizer_name=actor_params['tokenizer_model'],
+            device=self.device
         )        
 
         location_model = TextModel(
             self.rootify_model(obsrvr_params['location_model'])[0],
             obsrvr_params['tokenizer_model'],
+            self.device,
             self.rootify_model(obsrvr_params['location_model'])[1],     
         )
 
         surroundings_model = TextModel(
             self.rootify_model(obsrvr_params['surroundings_model'])[0],
             obsrvr_params['tokenizer_model'],
+            self.device,
             self.rootify_model(obsrvr_params['surroundings_model'])[1],     
         )
 
         inventory_model = TextModel(
             self.rootify_model(obsrvr_params['inventory_model'])[0],
             obsrvr_params['tokenizer_model'],
+            self.device,
             self.rootify_model(obsrvr_params['inventory_model'])[1],     
         )
 
@@ -84,7 +88,7 @@ class IBKG_Trainer:
     def train(self, num_episodes):
         
         for episode in range(num_episodes):
-            self.logger.log(f"Episode {episode + 1}/{num_episodes}")
+            self.logger.info(f"Episode {episode + 1}/{num_episodes}")
             self.logger.progress_bar(episode + 1, num_episodes)
 
             initial_state = self.env.reset()
@@ -100,13 +104,13 @@ class IBKG_Trainer:
             location=None
 
             while not done:
-                self.logger.log(f"Step {step_count + 1}")
+                self.logger.info(f"Step {step_count + 1}")
                 self.optimizer.zero_grad()
 
                 observed_triplets = self.obsrvr.generate_triplets(
                     observation=observation,
                     description=description,
-                    inventory=inv_desc,
+                    inv_desc=inv_desc,
                     previous_act=action,
                     previous_location=location
                 )

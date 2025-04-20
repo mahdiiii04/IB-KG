@@ -146,7 +146,7 @@ class IBKG(nn.Module):
         if hasattr(graph, 'to'):
             graph = graph.to(self.device)
     
-        rel_types = self.kg.get_relations_mapped().to(self.device)
+        rel_types = torch.tensor(self.kg.get_relations_mapped(), device=self.device)
 
         h_t = self.rgcn.forward(graph=graph, feat=node_feat, etypes=rel_types)
 

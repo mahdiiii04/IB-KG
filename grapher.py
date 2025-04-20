@@ -57,7 +57,9 @@ class Grapher:
         dst = self.get_destinations_mapped()
         rel = self.get_relations_mapped()
 
-        g = dgl.graph((src, dst))
+        num_nodes = len(self.node_mapping)
+        g = dgl.graph((src, dst), num_nodes=num_nodes)
+        
         g.edata['rel_type'] = torch.tensor(rel)
 
         return g
