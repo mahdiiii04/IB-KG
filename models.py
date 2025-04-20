@@ -70,17 +70,18 @@ class IBEncoder(nn.Module):
         return z, mu, logvar
     
 class ActionEncoder(nn.Module):
-    def __init__(self, emb_dim, latent_dim, model_name, tokenizer_name):
+    def __init__(self, emb_dim, latent_dim, model_name, tokenizer_name, device):
         super(ActionEncoder, self).__init__()
 
+        self.device = device
         self.model = BertModel.from_pretrained(model_name)
         self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
         self.projector = nn.Linear(emb_dim, latent_dim)
 
 
     def forward(self, actions):
+        inputs = {k: v.to(self.device) for k, v in self.tokenizer(actions, padding=True, truncation=True, return_tensors="pt").items()}
 
-        inputs = self.tokenizer(actions, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model(**inputs)
         embeddings = outputs.last_hidden_state[:, 0, :]
@@ -90,10 +91,12 @@ class ActionEncoder(nn.Module):
         return projected_embeddings
     
 class ActionDecoder(nn.Module):
-    def __init__(self, latent_dim, emb_dim, model_name, tokenizer_name):
+    def __init__(self, latent_dim, emb_dim, model_name, tokenizer_name, device):
         super(ActionDecoder, self).__init__()
 
-        self.encoder = ActionEncoder(emb_dim, latent_dim, model_name, tokenizer_name)
+        self.device = device
+
+        self.encoder = ActionEncoder(emb_dim, latent_dim, model_name, tokenizer_name, device).to(device)
 
 
     def forward(self, valid_actions, zt):
@@ -134,7 +137,7 @@ class IBKG(nn.Module):
         self.ib_encoder = IBEncoder(repr_dim, latent_dim).to(device)
         self.prediction_encoder = IBEncoder(repr_dim, latent_dim).to(device)
 
-        self.action_decoder = ActionDecoder(latent_dim, repr_dim, actor_model_name, actor_tokenizer_name).to(device)
+        self.action_decoder = ActionDecoder(latent_dim, repr_dim, actor_model_name, actor_tokenizer_name, device).to(device)
 
     def forward(self, valid_actions, beta=1.0, epsilon=0.1):
         
