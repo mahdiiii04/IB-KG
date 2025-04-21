@@ -142,7 +142,7 @@ class IBKG(nn.Module):
 
         self.action_decoder = ActionDecoder(latent_dim, actor_model_name, actor_tokenizer_name, device).to(device)
 
-    def forward(self, valid_actions, beta=1.0, epsilon=0.1):
+    def forward(self, valid_actions, beta=1.0, epsilon=0.1, lambda_=0.02):
         
         node_ids = list(range(len(self.kg.node_mapping)))
         node_ids_tensor = torch.LongTensor(node_ids).to(self.device)
@@ -165,12 +165,15 @@ class IBKG(nn.Module):
         l_1 = self.kl_divergence(mu_z, logvar_z)
         l_2 = self.kl_divergence(mu_h, logvar_h)
 
-        ib_loss = l_1 - beta * l_2
+        l_1 = torch.clamp(l_1, -10.0, 10.0)
+        l_2 = torch.clamp(l_2, -10.0, 10.0)
+
+        ib_loss = l_1 - beta * l_2 + lambda_ * l_2.pow(2)
 
         action, log_prob = self.action_decoder.get_action(valid_actions, z_t, epsilon=epsilon)
 
         return ib_loss, action, log_prob
 
     def kl_divergence(self, mu, logvar):
-        var = torch.exp(logvar) + 1e-6  # Prevent division by zero
-        return 0.5 * torch.sum(var + mu**2 - 1 - logvar)
+        kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        return kl_div / max(1, mu.size(0))
