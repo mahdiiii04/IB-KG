@@ -17,7 +17,9 @@ train:
   hidden_dim : 256
   repr_dim : 256
   latent_dim : 128
-  beta : 0.05
-  epsilon : 0.01
+  beta_start : 0.01
+  beta_end : 0.05
+  epsilon_start : 0.01
+  epsilon_end : 0.001
   learning_rate : 0.0003
   device : "cuda"

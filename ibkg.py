@@ -319,6 +319,7 @@ class IBKG_Trainer:
             values = torch.stack(values)
             log_probs = torch.stack(log_probs)
 
+            advantages = advantages.view_as(values)  # Ensure same shape
             value_targets = (advantages + values).detach()
             value_loss = F.mse_loss(values, value_targets)
             

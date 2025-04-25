@@ -7,7 +7,7 @@ echo "Installing DGL..."
 pip install dgl -f https://data.dgl.ai/wheels/torch-2.4/cu124/repo.html > /dev/null
 
 echo "Installing Transformers..."
-pip install transformers /dev/null
+pip install transformers > /dev/null
 
 echo "Installing Jericho..."
 pip install jericho > /dev/null
