@@ -35,11 +35,13 @@ class IBKG_Trainer:
         # Ensure log directories exist
         os.makedirs("logs", exist_ok=True)
         os.makedirs("checkpoints", exist_ok=True)
-        os.makedirs("logs/kg_states", exist_ok=True)
         
         self.timestamp = time.strftime("%Y%m%d-%H%M%S")
         self.log_dir = f"logs/run_{self.timestamp}"
         os.makedirs(self.log_dir, exist_ok=True)
+        
+        # Create run-specific kg_states directory
+        os.makedirs(f"{self.log_dir}/kg_states", exist_ok=True)
         
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
         
@@ -97,18 +99,18 @@ class IBKG_Trainer:
             {'params': self.ibkg.critic.parameters()}
         ], lr=train_params['learning_rate'])
 
-        self.logger = Logger(log_file=f"{self.log_dir}/training.log")
+        self.logger = Logger(log_dir=self.log_dir, log_filename="training.log")
         
         # Save configuration for this run
         with open(f"{self.log_dir}/config.yaml", 'w') as f:
             yaml.dump(config, f)
         
         # Log initialization information
-        self.logger.info(f"='*60")
+        self.logger.info(f"{'='*60}")
         self.logger.info(f"IBKG Training initialized at {self.timestamp}")
         self.logger.info(f"Device: {self.device}")
         self.logger.info(f"Configuration saved to {self.log_dir}/config.yaml")
-        self.logger.info(f"="*60)
+        self.logger.info(f"{'='*60}")
 
     def save_checkpoint(self, filename):
         """Save model checkpoint"""
@@ -120,7 +122,7 @@ class IBKG_Trainer:
         }, checkpoint_path)
         return checkpoint_path
 
-    def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50):
+    def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50, injection=False):
         """
         Train the IBKG model
         

@@ -34,13 +34,13 @@ class TextEnv:
     def step(self, action):
         
         self.state, reward, done, _ = self.env.step(action)
-        self.state.replace('\n', ' ')
+        self.state = self.state.replace('\n', ' ')
 
         inv_desc, _, _, _ = self.env.step("inventory")
-        inv_desc.replace('\n', ' ')
+        inv_desc = inv_desc.replace('\n', ' ')
 
         description, _, _, _ = self.env.step("look")
-        description.replace('\n', ' ')
+        description = description.replace('\n', ' ')
 
         return  {
             'observation': self.state,
@@ -51,4 +51,9 @@ class TextEnv:
         }
     
     def get_admissible_actions(self):
-        return self.env.get_valid_actions()
+        valid_actions = self.env.get_valid_actions()
+        
+        if not valid_actions:
+            return ["look", "inventory", "wait"]
+            
+        return valid_actions
