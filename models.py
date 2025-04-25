@@ -77,7 +77,11 @@ class ActionEncoder(nn.Module):
         self.device = device
         self.model = BertModel.from_pretrained(model_name)
         self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
-        self.projector = nn.Linear(768, latent_dim)
+        self.projector = nn.Sequential(
+            nn.Linear(768, 512),
+            nn.ReLU(),
+            nn.Linear(512, latent_dim)
+        )
 
 
     def forward(self, actions):

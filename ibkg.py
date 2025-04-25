@@ -222,7 +222,7 @@ class IBKG_Trainer:
                 intrinsic_reward = 0
 
                 if location not in visited_locations:
-                    intrinsic_reward += 0.1
+                    intrinsic_reward += 0.6
                     visited_locations.append(location)
 
                 new_triplets = 0
@@ -230,7 +230,7 @@ class IBKG_Trainer:
                     if triplet not in self.ibkg.kg.triplets:
                         new_triplets += 1
 
-                intrinsic_reward += new_triplets * 0.05
+                intrinsic_reward += new_triplets * 0.2
                 
                 prev_kg_size = len(self.ibkg.kg.triplets)
                 self.ibkg.kg.update(observed_triplets)
@@ -246,7 +246,7 @@ class IBKG_Trainer:
                 nodes = [node for node in nodes if node != 'you']
     
                 injected_triplets = self.cn_injector.get_triplets_for_nodes(nodes)
-                if injected_triplets:
+                if injected_triplets and injection:
                     prev_kg_size = len(self.ibkg.kg.triplets)
                     self.ibkg.kg.update(injected_triplets)
                     new_kg_size = len(self.ibkg.kg.triplets)
@@ -260,10 +260,13 @@ class IBKG_Trainer:
                     self.logger.info(f"Valid actions ({len(valid_actions)}): {', '.join(valid_actions)}")
 
                 # Forward pass
+                progress = episode / num_episodes
+                beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_end']) * progress
+                epsilon = train_params['epsilon_start'] * ((1 - progress) ** 2) + train_params['epsilon_end'] * (1 - (1 - progress) ** 2)
                 ib_loss, action, log_prob, value = self.ibkg.forward(
                     valid_actions=valid_actions,
-                    beta=train_params['beta'],
-                    epsilon=train_params['epsilon']
+                    beta=beta,
+                    epsilon=epsilon
                 )
                 
                 episode_metrics['actions'].append(action)
@@ -335,7 +338,7 @@ class IBKG_Trainer:
 
             # Backward pass
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.ibkg.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(self.ibkg.parameters(), max_norm=5.0)
             self.optimizer.step()
             
             # End of episode stats
