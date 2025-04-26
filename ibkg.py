@@ -261,8 +261,8 @@ class IBKG_Trainer:
 
                 # Forward pass
                 progress = episode / num_episodes
-                beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_end']) * progress
-                epsilon = train_params['epsilon_start'] * ((1 - progress) ** 2) + train_params['epsilon_end'] * (1 - (1 - progress) ** 2)
+                beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_start']) * progress
+                epsilon = train_params['epsilon_start'] + (train_params['epsilon_end'] - train_params['epsilon_start']) * progress
                 ib_loss, action, log_prob, value = self.ibkg.forward(
                     valid_actions=valid_actions,
                     beta=beta,
@@ -313,17 +313,20 @@ class IBKG_Trainer:
                     self.logger.info(f"Observation: {observation}")
                 
 
-            advantages = self.compute_gae(rewards, values, dones)
+            values = torch.stack(values) 
+            log_probs = torch.stack(log_probs)           
+            
+            advantages = self.compute_gae(rewards, values, dones)  
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-            values = torch.stack(values)
-            log_probs = torch.stack(log_probs)
-
-            advantages = advantages.view_as(values)  # Ensure same shape
+            
+            advantages = advantages.unsqueeze(1) 
+            
             value_targets = (advantages + values).detach()
             value_loss = F.mse_loss(values, value_targets)
-            
-            policy_loss = (-log_probs * advantages).mean()
+
+            policy_loss = (-log_probs * advantages.squeeze(1)).mean()
+
 
             loss = ib_loss + policy_loss + 0.5 * value_loss
             

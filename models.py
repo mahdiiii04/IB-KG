@@ -154,7 +154,7 @@ class IBKG(nn.Module):
         self.action_decoder = ActionDecoder(latent_dim, actor_model_name, actor_tokenizer_name, device).to(device)
         self.critic = Critic(latent_dim).to(device)
 
-    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02):
+    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02, evaluate=False):
         
         node_ids = list(range(len(self.kg.node_mapping)))
         node_ids_tensor = torch.LongTensor(node_ids).to(self.device)
@@ -182,8 +182,20 @@ class IBKG(nn.Module):
 
         ib_loss = l_1 - beta * l_2 + ib_reg * l_2.pow(2)
 
-        action, log_prob = self.action_decoder.get_action(valid_actions, z_t, epsilon=epsilon)
+        scores = self.action_decoder.forward(valid_actions, z_t)
+        probs = F.softmax(scores, dim=0)
+        log_probs = F.log_softmax(scores, dim=0)
 
+        if evaluate:
+            action_idx = torch.argmax(probs).item()
+        else:
+            if torch.rand(1).item() < epsilon:
+                action_idx = torch.randint(0, len(valid_actions), (1,)).item()
+            else:
+                action_idx = torch.multinomial(probs, 1).item()
+        
+        action = valid_actions[action_idx]
+        log_prob = log_probs[action_idx]
         value = self.critic.forward(z_t)
 
         return ib_loss, action, log_prob, value
