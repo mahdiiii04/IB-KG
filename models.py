@@ -83,17 +83,40 @@ class ActionEncoder(nn.Module):
             nn.Linear(512, latent_dim)
         )
 
+        self.cache = {}  # NEW: simple dictionary cache
 
     def forward(self, actions):
-        inputs = {k: v.to(self.device) for k, v in self.tokenizer(actions, padding=True, truncation=True, return_tensors="pt").items()}
+        # Prepare outputs list
+        outputs = []
 
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-        embeddings = outputs.last_hidden_state[:, 0, :]
+        # Find which actions are not cached yet
+        new_actions = []
+        indices = []  # track original index for inserting results later
 
-        projected_embeddings = self.projector(embeddings)
+        for idx, action in enumerate(actions):
+            if action in self.cache:
+                outputs.append(self.cache[action])
+            else:
+                new_actions.append(action)
+                indices.append(idx)
 
-        return projected_embeddings
+        # If there are uncached actions, encode them
+        if new_actions:
+            inputs = {k: v.to(self.device) for k, v in self.tokenizer(new_actions, padding=True, truncation=True, return_tensors="pt").items()}
+            with torch.no_grad():
+                model_outputs = self.model(**inputs)
+            embeddings = model_outputs.last_hidden_state[:, 0, :]  # [CLS] token
+            projected_embeddings = self.projector(embeddings)
+
+            # Insert new embeddings into cache and outputs
+            for idx, action in enumerate(new_actions):
+                emb = projected_embeddings[idx]
+                self.cache[action] = emb
+                outputs.insert(indices[idx], emb)
+
+        # Stack all outputs into one tensor
+        outputs = torch.stack(outputs, dim=0)
+        return outputs
     
 class ActionDecoder(nn.Module):
     def __init__(self, latent_dim, model_name, tokenizer_name, device):
@@ -154,7 +177,7 @@ class IBKG(nn.Module):
         self.action_decoder = ActionDecoder(latent_dim, actor_model_name, actor_tokenizer_name, device).to(device)
         self.critic = Critic(latent_dim).to(device)
 
-    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02, evaluate=False):
+    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02):
         
         node_ids = list(range(len(self.kg.node_mapping)))
         node_ids_tensor = torch.LongTensor(node_ids).to(self.device)
@@ -182,20 +205,8 @@ class IBKG(nn.Module):
 
         ib_loss = l_1 - beta * l_2 + ib_reg * l_2.pow(2)
 
-        scores = self.action_decoder.forward(valid_actions, z_t)
-        probs = F.softmax(scores, dim=0)
-        log_probs = F.log_softmax(scores, dim=0)
+        action, log_prob = self.action_decoder.get_action(valid_actions, z_t, epsilon=epsilon)
 
-        if evaluate:
-            action_idx = torch.argmax(probs).item()
-        else:
-            if torch.rand(1).item() < epsilon:
-                action_idx = torch.randint(0, len(valid_actions), (1,)).item()
-            else:
-                action_idx = torch.multinomial(probs, 1).item()
-        
-        action = valid_actions[action_idx]
-        log_prob = log_probs[action_idx]
         value = self.critic.forward(z_t)
 
         return ib_loss, action, log_prob, value
