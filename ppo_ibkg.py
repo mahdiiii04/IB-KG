@@ -119,7 +119,7 @@ class IBKG_Trainer:
         self.reward_normalizers = [RewardNormalizer() for _ in range(self.num_envs)]
         
         # Create KG states for each environment
-        self.kg_states = [IBKG_State(self.ibkg.kg.clone()) for _ in range(self.num_envs)]
+        self.kg_states = [IBKG_State(self.ibkg.kg) for _ in range(self.num_envs)]
         
         # Log initialization information
         self.logger.info(f"{'='*60}")
