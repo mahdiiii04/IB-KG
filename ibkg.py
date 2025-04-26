@@ -42,6 +42,7 @@ class IBKG_Trainer:
         
         # Create run-specific kg_states directory
         os.makedirs(f"{self.log_dir}/kg_states", exist_ok=True)
+        os.makedirs(f"{self.log_dir}/action_data", exist_ok=True)  # New directory for action data
         
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
         
@@ -104,6 +105,9 @@ class IBKG_Trainer:
         # Save configuration for this run
         with open(f"{self.log_dir}/config.yaml", 'w') as f:
             yaml.dump(config, f)
+        
+        # Initialize buffer for action data
+        self.action_data_buffer = []
         
         # Log initialization information
         self.logger.info(f"{'='*60}")
@@ -196,6 +200,9 @@ class IBKG_Trainer:
             # Log initial KG state
             episode_metrics['kg_size'].append(len(self.ibkg.kg.triplets))
     
+            # Collect action data for this episode
+            episode_action_data = []
+    
             while not done and step_count < train_params.get('max_steps_per_episode', 100):
                 step_start = time.time()
 
@@ -263,11 +270,20 @@ class IBKG_Trainer:
                 progress = episode / num_episodes
                 beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_start']) * progress
                 epsilon = train_params['epsilon_start'] + (train_params['epsilon_end'] - train_params['epsilon_start']) * progress
-                ib_loss, action, log_prob, value = self.ibkg.forward(
+                ib_loss, action, log_prob, value, action_probs = self.ibkg.forward(  # Modified to return action_probs
                     valid_actions=valid_actions,
                     beta=beta,
                     epsilon=epsilon
                 )
+                
+                # Store action data for this step
+                step_action_data = {
+                    'valid_actions': valid_actions,
+                    'action_probs': {act: prob for act, prob in zip(valid_actions, action_probs)},  # Assuming action_probs is a list
+                    'chosen_action': action,
+                    'reward': reward + intrinsic_reward * max(0.1, 1.0 - (episode / num_episodes))
+                }
+                episode_action_data.append(step_action_data)
                 
                 episode_metrics['actions'].append(action)
                 episode_metrics['losses']['ib'].append(ib_loss.item())
@@ -315,18 +331,14 @@ class IBKG_Trainer:
 
             values = torch.stack(values) 
             log_probs = torch.stack(log_probs)           
-            
             advantages = self.compute_gae(rewards, values, dones)  
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-            
             advantages = advantages.unsqueeze(1) 
             
             value_targets = (advantages + values).detach()
             value_loss = F.mse_loss(values, value_targets)
 
             policy_loss = (-log_probs * advantages.squeeze(1)).mean()
-
 
             loss = ib_loss + policy_loss + 0.5 * value_loss
             
@@ -368,6 +380,20 @@ class IBKG_Trainer:
                         'value': value_loss.item()
                     }
                 }) + '\n')
+            
+            # Append episode action data to buffer
+            self.action_data_buffer.append(episode_action_data)
+            
+            # Save action data every 100 episodes
+            if (episode + 1) % 100 == 0:
+                chunk_idx = (episode + 1) // 100
+                start_ep = (chunk_idx - 1) * 100 + 1
+                end_ep = chunk_idx * 100
+                filename = f"action_data_ep{start_ep}-{end_ep}.json"
+                filepath = os.path.join(self.log_dir, "action_data", filename)
+                with open(filepath, 'w') as f:
+                    json.dump(self.action_data_buffer[-100:], f, indent=2)
+                self.logger.info(f"Saved action data for episodes {start_ep}-{end_ep} to {filepath}")
             
             self.logger.info(f"\n{'='*50}")
             self.logger.info(f"Episode {episode + 1} Summary:")
