@@ -176,7 +176,7 @@ class ActionDecoder(nn.Module):
         else:
             action = torch.multinomial(probs, 1).item()        
 
-        return valid_actions[action], log_probs[action]
+        return valid_actions[action], log_probs[action], probs
 
 class Critic(nn.Module):
     def __init__(self, latenet_dim):
@@ -230,11 +230,11 @@ class IBKG(nn.Module):
 
         ib_loss = l_1 - beta * l_2 + ib_reg * l_2.pow(2)
 
-        action, log_prob = self.action_decoder.get_action(valid_actions, z_t, epsilon=epsilon)
+        action, log_prob, probs = self.action_decoder.get_action(valid_actions, z_t, epsilon=epsilon)
 
         value = self.critic.forward(z_t)
 
-        return ib_loss, action, log_prob, value
+        return ib_loss, action, log_prob, value, probs
 
     def kl_divergence(self, mu, logvar):
         kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
