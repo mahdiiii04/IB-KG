@@ -452,17 +452,17 @@ class IBKG_Trainer:
         return '/'.join(model_name.split('/')[:2]), '/'.join(model_name.split('/')[2:]) if model_name.split('/')[2:] else None
 
     def compute_gae(self, rewards, values, dones, gamma=0.99, lambda_=0.95):
-        advantages = []
-        advantage = 0  
-        next_value = 0  
+        advantages = torch.zeros(len(rewards), device=self.device)
+        last_advantage = 0
         
         for t in reversed(range(len(rewards))):
+            if t == len(rewards) - 1:
+                next_value = 0
+            else:
+                next_value = values[t + 1]
+                
             delta = rewards[t] + gamma * next_value * (1 - dones[t]) - values[t]
-            
-            advantage = delta + gamma * lambda_ * (1 - dones[t]) * advantage
-            
-            advantages.append(advantage)
-            
-            next_value = values[t]
+            advantages[t] = delta + gamma * lambda_ * (1 - dones[t]) * (last_advantage if t < len(rewards) - 1 else 0)
+            last_advantage = advantages[t]
         
-        return torch.tensor(advantages[::-1], device=self.device)
+        return advantages
