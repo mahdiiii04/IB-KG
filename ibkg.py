@@ -42,7 +42,9 @@ class IBKG_Trainer:
         
         # Create run-specific kg_states directory
         os.makedirs(f"{self.log_dir}/kg_states", exist_ok=True)
-        os.makedirs(f"{self.log_dir}/action_data", exist_ok=True)  # New directory for action data
+        
+        # Create trajectory data directory
+        os.makedirs(f"{self.log_dir}/trajectory_data", exist_ok=True)
         
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
         
@@ -106,15 +108,16 @@ class IBKG_Trainer:
         with open(f"{self.log_dir}/config.yaml", 'w') as f:
             yaml.dump(config, f)
         
-        # Initialize buffer for action data
-        self.action_data_buffer = []
-        
         # Log initialization information
         self.logger.info(f"{'='*60}")
         self.logger.info(f"IBKG Training initialized at {self.timestamp}")
         self.logger.info(f"Device: {self.device}")
         self.logger.info(f"Configuration saved to {self.log_dir}/config.yaml")
         self.logger.info(f"{'='*60}")
+        
+        # Initialize trajectory collection
+        self.trajectory_buffer = []
+        self.current_episode_batch = 0
 
     def save_checkpoint(self, filename):
         """Save model checkpoint"""
@@ -125,6 +128,49 @@ class IBKG_Trainer:
             'node_mapping': self.ibkg.kg.node_mapping
         }, checkpoint_path)
         return checkpoint_path
+    
+    def save_trajectory_data(self, episode_batch):
+        """Save collected trajectory data to file"""
+        if not self.trajectory_buffer:
+            return
+            
+        trajectory_path = f"{self.log_dir}/trajectory_data/trajectories_batch_{episode_batch}.json"
+        
+        # Efficiently convert tensor data to serializable format
+        serializable_data = []
+        for episode_data in self.trajectory_buffer:
+            serialized_episode = {
+                "episode_id": episode_data["episode_id"],
+                "steps": []
+            }
+            
+            for step in episode_data["steps"]:
+                # Convert tensor action probabilities to list
+                if isinstance(step["action_probs"], torch.Tensor):
+                    probs = step["action_probs"].detach().cpu().numpy().tolist()
+                else:
+                    probs = step["action_probs"]
+                
+                serialized_step = {
+                    "valid_actions": step["valid_actions"],
+                    "chosen_action": step["chosen_action"],
+                    "action_probs": probs,
+                    "reward": float(step["reward"]),
+                    "observation": step["observation"],
+                    "location": step["location"],
+                    "inventory": step["inventory"]
+                }
+                serialized_episode["steps"].append(serialized_step)
+            
+            serializable_data.append(serialized_episode)
+        
+        with open(trajectory_path, "w") as f:
+            json.dump(serializable_data, f)
+            
+        self.logger.info(f"Saved trajectory data for episodes {episode_batch-99}-{episode_batch} to {trajectory_path}")
+        
+        # Clear buffer after saving
+        self.trajectory_buffer = []
 
     def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50, injection=False):
         """
@@ -168,6 +214,12 @@ class IBKG_Trainer:
                 'losses': {'ib': [], 'policy': [], 'value': []},
                 'actions': []
             }
+            
+            # Initialize episode trajectory data
+            episode_trajectory = {
+                "episode_id": episode + 1,
+                "steps": []
+            }
 
             self.logger.info(f"\n{'='*50}")
             self.logger.info(f"Episode {episode + 1}/{num_episodes}")
@@ -199,9 +251,6 @@ class IBKG_Trainer:
             
             # Log initial KG state
             episode_metrics['kg_size'].append(len(self.ibkg.kg.triplets))
-    
-            # Collect action data for this episode
-            episode_action_data = []
     
             while not done and step_count < train_params.get('max_steps_per_episode', 100):
                 step_start = time.time()
@@ -270,20 +319,23 @@ class IBKG_Trainer:
                 progress = episode / num_episodes
                 beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_start']) * progress
                 epsilon = train_params['epsilon_start'] + (train_params['epsilon_end'] - train_params['epsilon_start']) * progress
-                ib_loss, action, log_prob, value, action_probs = self.ibkg.forward(  # Modified to return action_probs
+                ib_loss, action, log_prob, value, probs = self.ibkg.forward(
                     valid_actions=valid_actions,
                     beta=beta,
                     epsilon=epsilon
                 )
                 
-                # Store action data for this step
-                step_action_data = {
-                    'valid_actions': valid_actions,
-                    'action_probs': {act: prob for act, prob in zip(valid_actions, action_probs)},  # Assuming action_probs is a list
-                    'chosen_action': action,
-                    'reward': reward + intrinsic_reward * max(0.1, 1.0 - (episode / num_episodes))
+                # Store step trajectory data
+                step_trajectory = {
+                    "valid_actions": valid_actions,
+                    "chosen_action": action,
+                    "action_probs": probs.detach().cpu().tolist(),  # Convert to Python list immediately
+                    "reward": float(reward),  # Ensure numeric values are Python native types
+                    "observation": observation,
+                    "location": location if location else "",
+                    "inventory": inv_desc
                 }
-                episode_action_data.append(step_action_data)
+                episode_trajectory["steps"].append(step_trajectory)
                 
                 episode_metrics['actions'].append(action)
                 episode_metrics['losses']['ib'].append(ib_loss.item())
@@ -329,16 +381,23 @@ class IBKG_Trainer:
                     self.logger.info(f"Observation: {observation}")
                 
 
+            # Add episode trajectory to buffer
+            self.trajectory_buffer.append(episode_trajectory)
+
             values = torch.stack(values) 
             log_probs = torch.stack(log_probs)           
+            
             advantages = self.compute_gae(rewards, values, dones)  
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+            
             advantages = advantages.unsqueeze(1) 
             
             value_targets = (advantages + values).detach()
             value_loss = F.mse_loss(values, value_targets)
 
             policy_loss = (-log_probs * advantages.squeeze(1)).mean()
+
 
             loss = ib_loss + policy_loss + 0.5 * value_loss
             
@@ -381,20 +440,6 @@ class IBKG_Trainer:
                     }
                 }) + '\n')
             
-            # Append episode action data to buffer
-            self.action_data_buffer.append(episode_action_data)
-            
-            # Save action data every 100 episodes
-            if (episode + 1) % 100 == 0:
-                chunk_idx = (episode + 1) // 100
-                start_ep = (chunk_idx - 1) * 100 + 1
-                end_ep = chunk_idx * 100
-                filename = f"action_data_ep{start_ep}-{end_ep}.json"
-                filepath = os.path.join(self.log_dir, "action_data", filename)
-                with open(filepath, 'w') as f:
-                    json.dump(self.action_data_buffer[-100:], f, indent=2)
-                self.logger.info(f"Saved action data for episodes {start_ep}-{end_ep} to {filepath}")
-            
             self.logger.info(f"\n{'='*50}")
             self.logger.info(f"Episode {episode + 1} Summary:")
             self.logger.info(f"Steps: {step_count}")
@@ -402,6 +447,11 @@ class IBKG_Trainer:
             self.logger.info(f"Time taken: {timedelta(seconds=int(episode_time))}")
             self.logger.info(f"Losses - IB: {ib_loss.item():.4f}, Policy: {policy_loss.item():.4f}, Value: {value_loss.item():.4f}")
             self.logger.info(f"KG size: {new_kg_size} triplets")
+            
+            # Check if we should save trajectory data (every 100 episodes)
+            if (episode + 1) % 100 == 0:
+                self.current_episode_batch = episode + 1
+                self.save_trajectory_data(self.current_episode_batch)
             
             # Log rolling statistics every checkpoint_interval episodes
             if episode > 0 and (episode + 1) % checkpoint_interval == 0:
@@ -434,6 +484,10 @@ class IBKG_Trainer:
             # Save node mapping at each episode
             with open(env_params['node_mapping_file'], 'w') as f:
                 json.dump(self.ibkg.kg.node_mapping, f)
+
+        # Save any remaining trajectory data
+        if len(self.trajectory_buffer) > 0:
+            self.save_trajectory_data(num_episodes)
         
         total_time = time.time() - start_time
         
