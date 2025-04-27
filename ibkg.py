@@ -13,6 +13,7 @@ from OBSRVR import OBSRVR
 from injection import ConceptGraph
 from env import TextEnv
 from logger import Logger
+from saver import Saver
 
 with open('conf/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -44,7 +45,7 @@ class IBKG_Trainer:
         os.makedirs(f"{self.log_dir}/kg_states", exist_ok=True)
         
         # Create trajectory data directory
-        os.makedirs(f"{self.log_dir}/trajectory_data", exist_ok=True)
+        os.makedirs(f"{self.log_dir}/trajectory", exist_ok=True)
         
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
         
@@ -103,6 +104,8 @@ class IBKG_Trainer:
         ], lr=train_params['learning_rate'])
 
         self.logger = Logger(log_dir=self.log_dir, log_filename="training.log")
+
+        self.saver = Saver()
         
         # Save configuration for this run
         with open(f"{self.log_dir}/config.yaml", 'w') as f:
@@ -119,13 +122,14 @@ class IBKG_Trainer:
         self.trajectory_buffer = []
         self.current_episode_batch = 0
 
-    def save_checkpoint(self, filename):
+    def save_checkpoint(self, filename, episode):
         """Save model checkpoint"""
         checkpoint_path = f"{self.log_dir}/{filename}"
         torch.save({
             'ibkg_state_dict': self.ibkg.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'node_mapping': self.ibkg.kg.node_mapping
+            'node_mapping': self.ibkg.kg.node_mapping,
+            'episode': episode
         }, checkpoint_path)
         return checkpoint_path
     
@@ -134,7 +138,7 @@ class IBKG_Trainer:
         if not self.trajectory_buffer:
             return
             
-        trajectory_path = f"{self.log_dir}/trajectory_data/trajectories_batch_{episode_batch}.json"
+        trajectory_path = f"{self.log_dir}/trajectory/Ep_{episode_batch}.json"
         
         # Efficiently convert tensor data to serializable format
         serializable_data = []
@@ -172,7 +176,7 @@ class IBKG_Trainer:
         # Clear buffer after saving
         self.trajectory_buffer = []
 
-    def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50, injection=False):
+    def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50, injection=False, continue_train=False):
         """
         Train the IBKG model
         
@@ -197,15 +201,27 @@ class IBKG_Trainer:
             'reward_progression': []
         }
         
+
         # Create metrics file for real-time tracking
         metrics_file = f"{self.log_dir}/metrics.jsonl"
-        
+
+        episode = 0
+
+        if continue_train:
+            checkpoint = self.saver.load_checkpoint(train_params['hf_repo'], 'ibkg_model.pt', self.device)
+            self.ibkg.load_state_dict(checkpoint['ibkg_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.ibkg.kg.node_mapping = checkpoint['node_mapping']
+            episode = checkpoint['episode']
+
+
         self.logger.info(f"Starting training with {num_episodes} episodes")
         self.logger.info(f"Logs saved to {self.log_dir}")
+
         
         start_time = time.time()
         
-        for episode in range(num_episodes):
+        while episode < num_episodes:
             episode_start = time.time()
             episode_metrics = {
                 'episode': episode + 1,
@@ -452,6 +468,11 @@ class IBKG_Trainer:
             if (episode + 1) % 100 == 0:
                 self.current_episode_batch = episode + 1
                 self.save_trajectory_data(self.current_episode_batch)
+
+                checkpoint_path = self.save_checkpoint(f"ibkg_model.pt", episode)
+                self.logger.info(f"Saved checkpoint to {checkpoint_path}")
+
+                self.saver.push(f'{self.log_dir}/ibkg_model.pt', f'{self.log_dir}/trajectory', train_params['hf_repo'])
             
             # Log rolling statistics every checkpoint_interval episodes
             if episode > 0 and (episode + 1) % checkpoint_interval == 0:
@@ -465,9 +486,7 @@ class IBKG_Trainer:
                                 f"Policy: {np.mean(metrics['policy_losses'][-window:]):.4f}, "
                                 f"Value: {np.mean(metrics['value_losses'][-window:]):.4f}")
             
-                # Save checkpoints 
-                checkpoint_path = self.save_checkpoint(f"checkpoint_ep{episode+1}.pt")
-                self.logger.info(f"Saved checkpoint to {checkpoint_path}")
+                
             
             # Save the knowledge graph state periodically
             if (episode + 1) % kg_save_interval == 0:
@@ -484,6 +503,8 @@ class IBKG_Trainer:
             # Save node mapping at each episode
             with open(env_params['node_mapping_file'], 'w') as f:
                 json.dump(self.ibkg.kg.node_mapping, f)
+
+            episode += 1
 
         # Save any remaining trajectory data
         if len(self.trajectory_buffer) > 0:
@@ -522,7 +543,7 @@ class IBKG_Trainer:
         self.logger.info(f"Results saved to {results_path}")
         
         # Save final model checkpoint
-        final_checkpoint = self.save_checkpoint("final_model.pt")
+        final_checkpoint = self.save_checkpoint("final_model.pt", num_episodes)
         self.logger.info(f"Final model saved to {final_checkpoint}")
         
         return results

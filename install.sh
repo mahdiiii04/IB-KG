@@ -15,4 +15,7 @@ pip install jericho > /dev/null
 echo "Installing PyVis..."
 pip install pyvis > /dev/null
 
+echo "Installing HuggingFace..."
+pip install huggingface_hub
+
 echo "✅ All packages installed successfully."
