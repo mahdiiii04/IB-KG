@@ -165,7 +165,7 @@ class IBKG_Trainer:
             serializable_data.append(serialized_episode)
         
         with open(trajectory_path, "w") as f:
-            json.dump(serializable_data, f)
+            json.dump(serializable_data, f, indent=4)
             
         self.logger.info(f"Saved trajectory data for episodes {episode_batch-99}-{episode_batch} to {trajectory_path}")
         
