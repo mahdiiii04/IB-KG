@@ -23,4 +23,4 @@ train:
   epsilon_end : 0.001
   learning_rate : 0.0003
   device : "cuda"
-  rf_repo: "mahdiiiii04/ibkg"
+  hf_repo: "mahdiiiii04/ibkg"

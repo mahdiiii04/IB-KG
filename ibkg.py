@@ -218,6 +218,9 @@ class IBKG_Trainer:
         self.logger.info(f"Starting training with {num_episodes} episodes")
         self.logger.info(f"Logs saved to {self.log_dir}")
 
+        os.makedirs(self.log_dir, exist_ok=True)
+        os.makedirs(f"{self.log_dir}/trajectory", exist_ok=True)
+        os.makedirs(f"{self.log_dir}/kg_states", exist_ok=True)
         
         start_time = time.time()
         
