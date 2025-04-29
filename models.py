@@ -94,8 +94,8 @@ class ActionEncoder(nn.Module):
         projected_embeddings = self.projector(embeddings)
 
         return projected_embeddings
-    
-class ActionEncoder2(nn.Module):
+
+class CachedActionEncoder(nn.Module):
     def __init__(self, latent_dim, model_name, tokenizer_name, device):
         super(ActionEncoder, self).__init__()
 
@@ -107,41 +107,52 @@ class ActionEncoder2(nn.Module):
             nn.ReLU(),
             nn.Linear(512, latent_dim)
         )
-
-        self.cache = {}  # NEW: simple dictionary cache
+        self.bert_cache = {}  # Cache to store BERT embeddings
 
     def forward(self, actions):
-        # Prepare outputs list
-        outputs = []
+        # Initialize list to hold BERT embeddings in order of input actions
+        bert_embeddings = [None] * len(actions)
+        uncached_indices = []
+        uncached_actions = []
 
-        # Find which actions are not cached yet
-        new_actions = []
-        indices = []  # track original index for inserting results later
-
+        # Check cache and collect uncached actions
         for idx, action in enumerate(actions):
-            if action in self.cache:
-                outputs.append(self.cache[action])
+            if action in self.bert_cache:
+                bert_embeddings[idx] = self.bert_cache[action]
             else:
-                new_actions.append(action)
-                indices.append(idx)
+                uncached_indices.append(idx)
+                uncached_actions.append(action)
 
-        # If there are uncached actions, encode them
-        if new_actions:
-            inputs = {k: v.to(self.device) for k, v in self.tokenizer(new_actions, padding=True, truncation=True, return_tensors="pt").items()}
+        # Process uncached actions in a batch
+        if uncached_actions:
+            # Tokenize with fixed padding and truncation
+            inputs = self.tokenizer(
+                uncached_actions,
+                padding='max_length',
+                truncation=True,
+                max_length=512,
+                return_tensors="pt"
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
             with torch.no_grad():
-                model_outputs = self.model(**inputs)
-            embeddings = model_outputs.last_hidden_state[:, 0, :]  # [CLS] token
-            projected_embeddings = self.projector(embeddings)
+                outputs = self.model(**inputs)
+            new_embeddings = outputs.last_hidden_state[:, 0, :]
 
-            # Insert new embeddings into cache and outputs
-            for idx, action in enumerate(new_actions):
-                emb = projected_embeddings[idx]
-                self.cache[action] = emb
-                outputs.insert(indices[idx], emb)
+            # Update cache and fill the corresponding positions
+            for action, emb in zip(uncached_actions, new_embeddings):
+                self.bert_cache[action] = emb.detach().clone()  # Detach and clone to prevent gradient tracking
 
-        # Stack all outputs into one tensor
-        outputs = torch.stack(outputs, dim=0)
-        return outputs
+            for idx, emb in zip(uncached_indices, new_embeddings):
+                bert_embeddings[idx] = emb
+
+        # Convert list to tensor and ensure it's on the correct device
+        bert_embeddings_tensor = torch.stack(bert_embeddings).to(self.device)
+
+        # Project embeddings using the current projector (allows gradient flow through projector)
+        projected_embeddings = self.projector(bert_embeddings_tensor)
+
+        return projected_embeddings
     
 class ActionDecoder(nn.Module):
     def __init__(self, latent_dim, model_name, tokenizer_name, device):

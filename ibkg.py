@@ -176,7 +176,7 @@ class IBKG_Trainer:
         # Clear buffer after saving
         self.trajectory_buffer = []
 
-    def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50, injection=False, continue_train=False):
+    def train(self, num_episodes, log_steps=False, log_obs=False, checkpoint_interval=10, kg_save_interval=50, injection=False, continue_train=False, print_summary_every=1):
         """
         Train the IBKG model
         
@@ -270,6 +270,8 @@ class IBKG_Trainer:
             
             # Log initial KG state
             episode_metrics['kg_size'].append(len(self.ibkg.kg.triplets))
+
+            moving_rewards = 0
     
             while not done and step_count < train_params.get('max_steps_per_episode', 100):
                 step_start = time.time()
@@ -355,6 +357,8 @@ class IBKG_Trainer:
                     "inventory": inv_desc
                 }
                 episode_trajectory["steps"].append(step_trajectory)
+
+                moving_rewards += reward
                 
                 episode_metrics['actions'].append(action)
                 episode_metrics['losses']['ib'].append(ib_loss.item())
@@ -459,13 +463,16 @@ class IBKG_Trainer:
                     }
                 }) + '\n')
             
-            self.logger.info(f"\n{'='*50}")
-            self.logger.info(f"Episode {episode + 1} Summary:")
-            self.logger.info(f"Steps: {step_count}")
-            self.logger.info(f"Total reward: {episode_reward:.2f}")
-            self.logger.info(f"Time taken: {timedelta(seconds=int(episode_time))}")
-            self.logger.info(f"Losses - IB: {ib_loss.item():.4f}, Policy: {policy_loss.item():.4f}, Value: {value_loss.item():.4f}")
-            self.logger.info(f"KG size: {new_kg_size} triplets")
+            if print_summary_every > 0 and (episode + 1) % print_summary_every == 0:
+                self.logger.info(f"\n{'='*50}")
+                self.logger.info(f"Episode {episode + 1} Summary:")
+                self.logger.info(f"Steps: {step_count}")
+                self.logger.info(f"Total reward: {episode_reward:.2f}")
+                self.logger.info(f"Time taken: {timedelta(seconds=int(episode_time))}")
+                self.logger.info(f"Losses - IB: {ib_loss.item():.4f}, Policy: {policy_loss.item():.4f}, Value: {value_loss.item():.4f}")
+                self.logger.info(f"KG size: {new_kg_size} triplets")
+                self.logger.info(f"Moving Average Reward: {moving_rewards / (step_count + 1):.2f}")
+                moving_rewards = 0
             
             # Check if we should save trajectory data (every 100 episodes)
             if (episode + 1) % 100 == 0:
