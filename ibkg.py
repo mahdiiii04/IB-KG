@@ -49,6 +49,9 @@ class IBKG_Trainer:
         os.makedirs(f"{self.log_dir}/trajectory", exist_ok=True)
         
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
+        if config['train']['device'] == "tpu":
+            import torch_xla.core.xla_model as xm
+            self.device = xm.xla_device()
         
         self.ibkg = IBKG(
             max_nodes=train_params['max_nodes'],
@@ -165,7 +168,8 @@ class IBKG_Trainer:
                     "reward": float(step["reward"]),
                     "observation": step["observation"],
                     "location": step["location"],
-                    "inventory": step["inventory"]
+                    "inventory": step["inventory"],
+                    "graph": step["graph"]
                 }
                 serialized_episode["steps"].append(serialized_step)
             
@@ -365,7 +369,8 @@ class IBKG_Trainer:
                     "reward": float(reward),  # Ensure numeric values are Python native types
                     "observation": observation,
                     "location": location if location else "",
-                    "inventory": inv_desc
+                    "inventory": inv_desc,
+                    "graph" : self.ibkg.kg.triplets.copy()
                 }
                 episode_trajectory["steps"].append(step_trajectory)
 
@@ -445,7 +450,7 @@ class IBKG_Trainer:
 
             # Backward pass
 
-            if episode % train_params.get('replay_frequency', 5) == 0:
+            if episode % train_params.get('replay_frequency', 5) == 0 and len(self.buffer) > train_params.get('batch_size', 32):
                 batch = self.buffer.sample(train_params.get('batch_size', 32))
                 replay_loss = self.compute_replay_loss(batch)
 

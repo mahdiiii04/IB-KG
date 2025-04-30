@@ -24,5 +24,6 @@ train:
   learning_rate : 0.0003
   batch_size : 32
   buffer_capacity : 10000
+  replay_frequency : 4
   device : "cuda"
   hf_repo: "mahdiiiii04/ibkg"
