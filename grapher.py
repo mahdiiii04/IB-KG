@@ -10,7 +10,14 @@ class Grapher:
     def reset(self):
         self.triplets = []
         self.locations = []
-     
+
+    def get_state(self):
+        return self.triplets.copy(), self.locations.copy()
+    
+    def set_state(self, triplets, locations):
+        self.triplets = triplets
+        self.locations = locations
+
     def update(self, triplets):
         '''
         add the triplets to the graph

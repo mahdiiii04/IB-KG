@@ -14,6 +14,7 @@ from injection import ConceptGraph
 from env import TextEnv
 from logger import Logger
 from saver import Saver
+from replayBuffer import ReplayBuffer
 
 with open('conf/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -92,6 +93,8 @@ class IBKG_Trainer:
         self.cn_injector = ConceptGraph(cn_params['concept_net_file'])
 
         self.env = TextEnv(env_params['rom_file'])
+
+        self.buffer = ReplayBuffer(capacity=train_params.get('buffer_capacity', 10000))
 
         self.optimizer = optim.Adam([
             {'params': self.ibkg.node_embedding.parameters()},
@@ -272,6 +275,9 @@ class IBKG_Trainer:
             episode_metrics['kg_size'].append(len(self.ibkg.kg.triplets))
 
             moving_rewards = 0
+
+            buffer_episode = []
+            ib_losses = []
     
             while not done and step_count < train_params.get('max_steps_per_episode', 100):
                 step_start = time.time()
@@ -313,6 +319,8 @@ class IBKG_Trainer:
                 self.ibkg.kg.update(observed_triplets)
                 new_kg_size = len(self.ibkg.kg.triplets)
 
+                buffer_state = self.ibkg.kg.get_state()
+
                 
                 if log_steps and prev_kg_size != new_kg_size:
                     self.logger.info(f"KG growth: {prev_kg_size} → {new_kg_size} (+{new_kg_size - prev_kg_size} triplets)")
@@ -336,16 +344,19 @@ class IBKG_Trainer:
                 if log_steps:
                     self.logger.info(f"Valid actions ({len(valid_actions)}): {', '.join(valid_actions)}")
 
+                buffer_valid_actions = valid_actions.copy()
+
                 # Forward pass
                 progress = episode / num_episodes
                 beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_start']) * progress
                 epsilon = train_params['epsilon_start'] + (train_params['epsilon_end'] - train_params['epsilon_start']) * progress
+
                 ib_loss, action, log_prob, value, probs = self.ibkg.forward(
                     valid_actions=valid_actions,
                     beta=beta,
                     epsilon=epsilon
                 )
-                
+                ib_losses.append(ib_loss.item())
                 # Store step trajectory data
                 step_trajectory = {
                     "valid_actions": valid_actions,
@@ -394,6 +405,14 @@ class IBKG_Trainer:
                 
                 step_time = time.time() - step_start
 
+                buffer_episode.append([
+                    buffer_state,
+                    buffer_valid_actions,
+                    action,
+                    total_reward,
+                    done
+                ])
+
                 if log_steps:
                     self.logger.info(f"Step time: {step_time:.2f}s")
                 
@@ -402,27 +421,17 @@ class IBKG_Trainer:
                                     
                 if log_obs:
                     self.logger.info(f"Observation: {observation}")
-                
+
+            self.buffer.push(buffer_episode)    
 
             # Add episode trajectory to buffer
             self.trajectory_buffer.append(episode_trajectory)
 
-            values = torch.stack(values) 
-            log_probs = torch.stack(log_probs)           
-            
-            advantages = self.compute_gae(rewards, values, dones)  
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            ib_loss = torch.stack(ib_losses).mean()
 
-            
-            advantages = advantages.unsqueeze(1) 
-            
-            value_targets = (advantages + values).detach()
-            value_loss = F.mse_loss(values, value_targets)
+            loss, policy_loss, value_loss = self.compute_loss(values, log_probs, ib_losses, rewards, dones)
 
-            policy_loss = (-log_probs * advantages.squeeze(1)).mean()
-
-
-            loss = ib_loss + policy_loss + 0.5 * value_loss
+            loss = loss + ib_loss
             
             episode_metrics['losses']['policy'] = policy_loss.item()
             episode_metrics['losses']['value'] = value_loss.item()
@@ -435,7 +444,17 @@ class IBKG_Trainer:
             episode_losses.append(loss.item())
 
             # Backward pass
-            loss.backward()
+
+            if episode % train_params.get('replay_frequency', 5) == 0:
+                batch = self.buffer.sample(train_params.get('batch_size', 32))
+                replay_loss = self.compute_replay_loss(batch)
+
+                replay_weight = train_params.get('replay_weight', 0.5)        
+                total_loss = loss * (1 - replay_weight) + replay_loss * replay_weight      
+            else:
+                total_loss = loss
+
+            total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.ibkg.parameters(), max_norm=5.0)
             self.optimizer.step()
             
@@ -577,3 +596,52 @@ class IBKG_Trainer:
             last_advantage = advantages[t]
         
         return advantages
+    
+    def compute_loss(self, values, log_probs, rewards, dones):
+        values = torch.stack(values) 
+        log_probs = torch.stack(log_probs)           
+            
+        advantages = self.compute_gae(rewards, values, dones)  
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+            
+        advantages = advantages.unsqueeze(1) 
+            
+        value_targets = (advantages + values).detach()
+        value_loss = F.mse_loss(values, value_targets)
+
+        policy_loss = (-log_probs * advantages.squeeze(1)).mean()
+
+        loss = policy_loss + 0.5 * value_loss
+
+        return loss, policy_loss, value_loss
+    
+    def compute_replay_loss(self, batch):
+
+        losses = []
+        for episode in batch:
+            rewards = []
+            log_probs = []
+            values = []
+            dones = []
+
+            for state, valid_actions, action, reward, done in episode:
+                self.ibkg.kg.set_state(*state)
+                
+                _, _, value, log_prob, probs = self.ibkg.forward(
+                    valid_actions=valid_actions,
+                    beta=0.0,
+                    epsilon=0.0
+                )
+
+                rewards.append(reward)
+                values.append(value)
+                log_probs.append(log_prob)
+                dones.append(done)
+
+            loss, _, _ = self.compute_loss(values, log_probs, rewards, dones)
+            losses.append(loss.item())
+
+        return torch.mean(torch.tensor(losses, device=self.device))
+
+        
