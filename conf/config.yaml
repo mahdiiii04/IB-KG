@@ -22,5 +22,7 @@ train:
   epsilon_start : 0.1
   epsilon_end : 0.001
   learning_rate : 0.0003
+  batch_size : 32
+  buffer_capacity : 10000
   device : "cuda"
   hf_repo: "mahdiiiii04/ibkg"
