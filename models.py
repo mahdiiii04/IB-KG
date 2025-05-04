@@ -250,3 +250,43 @@ class IBKG(nn.Module):
     def kl_divergence(self, mu, logvar):
         kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return kl_div / max(1, mu.size(0))
+    
+
+class NOIBKG(nn.Module):
+    def __init__(self, max_nodes, feat_dim, rel2id, node2id, hidden_dim, repr_dim, latent_dim, actor_model_name, actor_tokenizer_name, device):
+        super(IBKG, self).__init__()
+        self.device = device
+
+        self.kg = Grapher(node_mapping=node2id, rel_mapping=rel2id)
+        self.node_embedding = nn.Embedding(max_nodes, feat_dim).to(device)
+        self.rgcn = RGCN(feat_dim, hidden_dim, repr_dim, num_rels=len(rel2id)).to(device)
+        self.attention = AttentionPooling(repr_dim).to(device)
+
+        self.action_decoder = ActionDecoder(repr_dim, actor_model_name, actor_tokenizer_name, device).to(device)
+        self.critic = Critic(repr_dim).to(device)
+
+    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02):
+        node_ids = list(range(len(self.kg.node_mapping)))
+        node_ids_tensor = torch.LongTensor(node_ids).to(self.device)
+        node_feat = self.node_embedding(node_ids_tensor)
+
+        graph = self.kg.build_graph()
+        if hasattr(graph, 'to'):
+            graph = graph.to(self.device)
+    
+        rel_types = torch.tensor(self.kg.get_relations_mapped(), device=self.device)
+
+        h_t = self.rgcn.forward(graph=graph, feat=node_feat, etypes=rel_types)
+
+        graph_repr = self.attention.forward(h_t)
+
+        action, log_prob, probs = self.action_decoder.get_action(valid_actions, graph_repr, epsilon=epsilon)
+
+        # Fixed: Using graph_repr instead of undefined z_t
+        value = self.critic.forward(graph_repr)
+
+        return action, log_prob, value, probs
+
+    def kl_divergence(self, mu, logvar):
+        kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        return kl_div / max(1, mu.size(0))

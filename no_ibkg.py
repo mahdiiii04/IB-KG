@@ -49,11 +49,8 @@ class IBKG_Trainer:
         os.makedirs(f"{self.log_dir}/trajectory", exist_ok=True)
         
         self.device = torch.device(config['train']['device'] if torch.cuda.is_available() and config['train']['device'] == "cuda" else "cpu")
-        if config['train']['device'] == "tpu":
-            import torch_xla.core.xla_model as xm
-            self.device = xm.xla_device()
         
-        self.ibkg = IBKG(
+        self.ibkg = NOIBKG(
             max_nodes=train_params['max_nodes'],
             feat_dim=train_params['feat_dim'],
             rel2id=rel2id,
@@ -103,8 +100,6 @@ class IBKG_Trainer:
             {'params': self.ibkg.node_embedding.parameters()},
             {'params': self.ibkg.rgcn.parameters()},
             {'params': self.ibkg.attention.parameters()},
-            {'params': self.ibkg.ib_encoder.parameters()},
-            {'params': self.ibkg.prediction_encoder.parameters()},
             {'params': self.ibkg.action_decoder.parameters()},
             {'params': self.ibkg.critic.parameters()}
         ], lr=train_params['learning_rate'])
@@ -201,7 +196,6 @@ class IBKG_Trainer:
         episode_times = []
         total_actions_taken = 0
         metrics = {
-            'ib_losses': [],
             'policy_losses': [],
             'value_losses': [],
             'kg_sizes': [],
@@ -237,7 +231,7 @@ class IBKG_Trainer:
                 'episode': episode + 1,
                 'rewards': [],
                 'kg_size': [],
-                'losses': {'ib': [], 'policy': [], 'value': []},
+                'losses': {'policy': [], 'value': []},
                 'actions': []
             }
             
@@ -247,10 +241,6 @@ class IBKG_Trainer:
                 "steps": []
             }
 
-            self.logger.info(f"\n{'='*50}")
-            self.logger.info(f"Episode {episode + 1}/{num_episodes}")
-            self.logger.progress_bar(episode + 1, num_episodes)
-    
             initial_state = self.env.reset()
             self.ibkg.kg.reset()
             observation = initial_state['observation']
@@ -281,7 +271,6 @@ class IBKG_Trainer:
             moving_rewards = 0
 
             buffer_episode = []
-            ib_losses = []
     
             while not done and step_count < train_params.get('max_steps_per_episode', 100):
                 step_start = time.time()
@@ -309,7 +298,7 @@ class IBKG_Trainer:
                 intrinsic_reward = 0
 
                 if location not in visited_locations:
-                    intrinsic_reward += 0.6
+                    intrinsic_reward += 0.3
                     visited_locations.append(location)
 
                 new_triplets = 0
@@ -317,7 +306,7 @@ class IBKG_Trainer:
                     if triplet not in self.ibkg.kg.triplets:
                         new_triplets += 1
 
-                intrinsic_reward += new_triplets * 0.2
+                intrinsic_reward += new_triplets * 0.1
                 
                 prev_kg_size = len(self.ibkg.kg.triplets)
                 self.ibkg.kg.update(observed_triplets)
@@ -355,12 +344,11 @@ class IBKG_Trainer:
                 beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_start']) * progress
                 epsilon = train_params['epsilon_start'] + (train_params['epsilon_end'] - train_params['epsilon_start']) * progress
 
-                ib_loss, action, log_prob, value, probs = self.ibkg.forward(
+                action, log_prob, value, probs = self.ibkg.forward(
                     valid_actions=valid_actions,
                     beta=beta,
                     epsilon=epsilon
                 )
-                ib_losses.append(ib_loss)
                 # Store step trajectory data
                 step_trajectory = {
                     "valid_actions": valid_actions,
@@ -377,11 +365,9 @@ class IBKG_Trainer:
                 moving_rewards += reward
                 
                 episode_metrics['actions'].append(action)
-                episode_metrics['losses']['ib'].append(ib_loss.item())
 
                 if log_steps:
                     self.logger.info(f"Selected action: '{action}'")
-                    self.logger.info(f"Information bottleneck loss: {ib_loss.item():.4f}")
     
                 # Take action in environment
                 full_state = self.env.step(action)
@@ -432,16 +418,11 @@ class IBKG_Trainer:
             # Add episode trajectory to buffer
             self.trajectory_buffer.append(episode_trajectory)
 
-            ib_loss = torch.stack(ib_losses).mean()
-
             loss, policy_loss, value_loss = self.compute_loss(values, log_probs, rewards, dones)
-
-            loss = loss + ib_loss
             
             episode_metrics['losses']['policy'] = policy_loss.item()
             episode_metrics['losses']['value'] = value_loss.item()
             
-            metrics['ib_losses'].append(float(ib_loss.item()))
             metrics['policy_losses'].append(float(policy_loss.item()))
             metrics['value_losses'].append(float(value_loss.item()))
             metrics['kg_sizes'].append(new_kg_size)
@@ -450,14 +431,7 @@ class IBKG_Trainer:
 
             # Backward pass
 
-            if episode % train_params.get('replay_frequency', 5) == 0 and len(self.buffer) > train_params.get('batch_size', 32):
-                batch = self.buffer.sample(train_params.get('batch_size', 32))
-                replay_loss = self.compute_replay_loss(batch)
-
-                replay_weight = train_params.get('replay_weight', 0.5)        
-                total_loss = loss * (1 - replay_weight) + replay_loss * replay_weight      
-            else:
-                total_loss = loss
+            total_loss = loss
 
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.ibkg.parameters(), max_norm=5.0)
@@ -481,7 +455,6 @@ class IBKG_Trainer:
                     'kg_size': new_kg_size,
                     'losses': {
                         'total': loss.item(),
-                        'ib': ib_loss.item(),
                         'policy': policy_loss.item(),
                         'value': value_loss.item()
                     }
@@ -490,10 +463,10 @@ class IBKG_Trainer:
             if print_summary_every > 0 and (episode + 1) % print_summary_every == 0:
                 self.logger.info(f"\n{'='*50}")
                 self.logger.info(f"Episode {episode + 1} Summary:")
+                self.logger.progress_bar(episode + 1, num_episodes)
                 self.logger.info(f"Steps: {step_count}")
                 self.logger.info(f"Total reward: {episode_reward:.2f}")
                 self.logger.info(f"Time taken: {timedelta(seconds=int(episode_time))}")
-                self.logger.info(f"Losses - IB: {ib_loss.item():.4f}, Policy: {policy_loss.item():.4f}, Value: {value_loss.item():.4f}")
                 self.logger.info(f"KG size: {new_kg_size} triplets")
                 self.logger.info(f"Moving Average Reward: {moving_rewards / (step_count + 1):.2f}")
                 moving_rewards = 0
@@ -516,8 +489,7 @@ class IBKG_Trainer:
                 self.logger.info(f"Average reward: {np.mean(episode_rewards[-window:]):.2f}")
                 self.logger.info(f"Average steps: {np.mean(episode_steps[-window:]):.1f}")
                 self.logger.info(f"Average time per episode: {np.mean(episode_times[-window:]):.2f}s")
-                self.logger.info(f"Average losses - IB: {np.mean(metrics['ib_losses'][-window:]):.4f}, " 
-                                f"Policy: {np.mean(metrics['policy_losses'][-window:]):.4f}, "
+                self.logger.info(f"Policy: {np.mean(metrics['policy_losses'][-window:]):.4f}, "
                                 f"Value: {np.mean(metrics['value_losses'][-window:]):.4f}")
             
                 
@@ -603,24 +575,24 @@ class IBKG_Trainer:
         return advantages
     
     def compute_loss(self, values, log_probs, rewards, dones):
-        values = torch.stack(values)  # Shape: [n]
-        log_probs = torch.stack(log_probs)  # Shape: [n]
-        
-        advantages = self.compute_gae(rewards, values, dones)  # Shape: [n]
+        values = torch.stack(values) 
+        log_probs = torch.stack(log_probs)           
+            
+        advantages = self.compute_gae(rewards, values, dones)  
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        
-        # Remove unsqueeze(1) to keep advantages as 1D
-        value_targets = (advantages + values).detach()  # Shape: [n]
-        
-        # Ensure both tensors are 1D for MSE loss
-        value_loss = F.mse_loss(values, value_targets)  # Now both shapes: [n] vs [n]
-        
-        # Policy loss remains the same (advantages is 1D)
-        policy_loss = (-log_probs * advantages).mean()  # Shapes: [n] * [n] → [n] → scalar
-        
+
+            
+        advantages = advantages.unsqueeze(1) 
+            
+        value_targets = (advantages + values).detach()
+        value_loss = F.mse_loss(values, value_targets)
+
+        policy_loss = (-log_probs * advantages.squeeze(1)).mean()
+
         loss = policy_loss + 0.5 * value_loss
-        
+
         return loss, policy_loss, value_loss
+    
     def compute_replay_loss(self, batch):
 
         losses = []

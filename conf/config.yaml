@@ -12,18 +12,18 @@ actor:
   embedding_model : "bert-base-uncased"
   tokenizer_model : "bert-base-uncased"
 train:
-  max_nodes : 10000
+  max_nodes : 1000
   feat_dim : 256
   hidden_dim : 256
   repr_dim : 256
-  latent_dim : 128
+  latent_dim : 256
   beta_start : 0.01
   beta_end : 0.05
   epsilon_start : 0.1
   epsilon_end : 0.001
-  learning_rate : 0.0003
+  learning_rate : 0.001
   batch_size : 32
   buffer_capacity : 10000
   replay_frequency : 4
   device : "cuda"
-  hf_repo: "mahdiiiii04/ibkg"
+  hf_repo: "mahdiiiii04/ibkg-run3"
