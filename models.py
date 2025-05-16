@@ -254,7 +254,7 @@ class IBKG(nn.Module):
 
 class NOIBKG(nn.Module):
     def __init__(self, max_nodes, feat_dim, rel2id, node2id, hidden_dim, repr_dim, latent_dim, actor_model_name, actor_tokenizer_name, device):
-        super(IBKG, self).__init__()
+        super(NOIBKG, self).__init__()
         self.device = device
 
         self.kg = Grapher(node_mapping=node2id, rel_mapping=rel2id)

@@ -163,8 +163,7 @@ class IBKG_Trainer:
                     "reward": float(step["reward"]),
                     "observation": step["observation"],
                     "location": step["location"],
-                    "inventory": step["inventory"],
-                    "graph": step["graph"]
+                    "inventory": step["inventory"]
                 }
                 serialized_episode["steps"].append(serialized_step)
             
@@ -213,7 +212,7 @@ class IBKG_Trainer:
             self.ibkg.load_state_dict(checkpoint['ibkg_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.ibkg.kg.node_mapping = checkpoint['node_mapping']
-            episode = checkpoint['episode']
+            episode = checkpoint['episode'] + 1
 
 
         self.logger.info(f"Starting training with {num_episodes} episodes")
@@ -468,7 +467,6 @@ class IBKG_Trainer:
                 self.logger.info(f"Total reward: {episode_reward:.2f}")
                 self.logger.info(f"Time taken: {timedelta(seconds=int(episode_time))}")
                 self.logger.info(f"KG size: {new_kg_size} triplets")
-                self.logger.info(f"Moving Average Reward: {moving_rewards / (step_count + 1):.2f}")
                 moving_rewards = 0
             
             # Check if we should save trajectory data (every 100 episodes)
