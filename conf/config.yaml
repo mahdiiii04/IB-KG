@@ -8,6 +8,7 @@ cn:
 env:
   rom_file : "ROMS/zork1.z5"
   node_mapping_file : "mapping/zork1_node2id.json"
+  action_mapping_file : "mapping/zork1_act2id.json"
 actor:
   embedding_model : "bert-base-uncased"
   tokenizer_model : "bert-base-uncased"

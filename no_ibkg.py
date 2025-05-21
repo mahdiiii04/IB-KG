@@ -31,7 +31,7 @@ env_params = config['env']
 with open(env_params['node_mapping_file'], 'r') as f:
     node2id = json.load(f)
 
-with open(env_params['action_mapping'], 'r') as f:
+with open(env_params['action_mapping_file'], 'r') as f:
     act2id = json.load(f)   
 
 
@@ -61,9 +61,6 @@ class IBKG_Trainer:
             act2id=act2id,
             hidden_dim=train_params['hidden_dim'],
             repr_dim=train_params['repr_dim'],
-            latent_dim=train_params['latent_dim'],
-            actor_model_name=actor_params['embedding_model'],
-            actor_tokenizer_name=actor_params['tokenizer_model'],
             device=self.device
         )        
 

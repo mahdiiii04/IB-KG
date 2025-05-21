@@ -131,7 +131,7 @@ class ActionDecoder(nn.Module):
             device=device
         )
 
-        self.mlp = nn.Sequentail(
+        self.mlp = nn.Sequential(
             nn.Linear(latent_dim * 2, 256),
             nn.ReLU(),
             nn.Linear(256, 1)
@@ -185,7 +185,7 @@ class IBKG(nn.Module):
         self.ib_encoder = IBEncoder(repr_dim, latent_dim).to(device)
         self.prediction_encoder = IBEncoder(repr_dim, latent_dim).to(device)
 
-        self.action_decoder = ActionDecoder(latent_dim, actor_model_name, actor_tokenizer_name, device).to(device)
+        self.action_decoder = ActionDecoder(latent_dim, act2id, device).to(device)
         self.critic = Critic(latent_dim).to(device)
 
     def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02):
@@ -228,7 +228,7 @@ class IBKG(nn.Module):
     
 
 class NOIBKG(nn.Module):
-    def __init__(self, max_nodes, feat_dim, rel2id, node2id, hidden_dim, repr_dim, latent_dim, actor_model_name, actor_tokenizer_name, device):
+    def __init__(self, max_nodes, feat_dim, rel2id, node2id, act2id, hidden_dim, repr_dim, device):
         super(NOIBKG, self).__init__()
         self.device = device
 
@@ -237,7 +237,7 @@ class NOIBKG(nn.Module):
         self.rgcn = RGCN(feat_dim, hidden_dim, repr_dim, num_rels=len(rel2id)).to(device)
         self.attention = AttentionPooling(repr_dim).to(device)
 
-        self.action_decoder = ActionDecoder(repr_dim, actor_model_name, actor_tokenizer_name, device).to(device)
+        self.action_decoder = ActionDecoder(repr_dim, act2id, device).to(device)
         self.critic = Critic(repr_dim).to(device)
 
     def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02):
@@ -260,7 +260,3 @@ class NOIBKG(nn.Module):
         value = self.critic.forward(graph_repr)
 
         return action, log_prob, value, probs
-
-    def kl_divergence(self, mu, logvar):
-        kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        return kl_div / max(1, mu.size(0))
