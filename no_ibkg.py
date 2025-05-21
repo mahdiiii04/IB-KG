@@ -131,7 +131,7 @@ class IBKG_Trainer:
             'ibkg_state_dict': self.ibkg.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'node_mapping': self.ibkg.kg.node_mapping,
-            'action_mapping': self.ibkg.action_decoder.action_encoder.encoder.action_mapping,
+            'action_mapping': self.ibkg.action_decoder.encoder.action_mapping,
             'episode': episode
         }, checkpoint_path)
         return checkpoint_path
