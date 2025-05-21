@@ -31,6 +31,9 @@ env_params = config['env']
 with open(env_params['node_mapping_file'], 'r') as f:
     node2id = json.load(f)
 
+with open(env_params['action_mapping'], 'r') as f:
+    act2id = json.load(f)   
+
 
 class IBKG_Trainer:
     def __init__(self):
@@ -55,6 +58,7 @@ class IBKG_Trainer:
             feat_dim=train_params['feat_dim'],
             rel2id=rel2id,
             node2id=node2id,
+            act2id=act2id,
             hidden_dim=train_params['hidden_dim'],
             repr_dim=train_params['repr_dim'],
             latent_dim=train_params['latent_dim'],
@@ -130,6 +134,7 @@ class IBKG_Trainer:
             'ibkg_state_dict': self.ibkg.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'node_mapping': self.ibkg.kg.node_mapping,
+            'action_mapping': self.ibkg.action_decoder.action_encoder.encoder.action_mapping,
             'episode': episode
         }, checkpoint_path)
         return checkpoint_path
@@ -212,6 +217,7 @@ class IBKG_Trainer:
             self.ibkg.load_state_dict(checkpoint['ibkg_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.ibkg.kg.node_mapping = checkpoint['node_mapping']
+            self.ibkg.action_decoder.encoder.action_mapping = checkpoint['action_mapping']
             episode = checkpoint['episode'] + 1
 
 

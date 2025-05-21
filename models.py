@@ -69,10 +69,32 @@ class IBEncoder(nn.Module):
 
         z = mu + eps * std
         return z, mu, logvar
-    
+
 class ActionEncoder(nn.Module):
-    def __init__(self, latent_dim, model_name, tokenizer_name, device):
+    def __init__(self, vocab_size, emb_dim, latent_dim, act2id, device):
         super(ActionEncoder, self).__init__()
+        self.device = device
+        self.action_mapping = act2id
+        self.embedding = nn.Embedding(vocab_size, emb_dim)
+        self.projector = nn.Sequential(
+            nn.Linear(emb_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, latent_dim)
+        )
+
+    def forward(self, valid_actions):
+        action_indices = []
+        for action in valid_actions:
+            if action not in self.action_mapping:
+                self.action_mapping[action] = len(self.action_mapping)
+            action_indices.append(self.action_mapping[action])
+        indices = torch.tensor(action_indices).to(self.device)
+        embs = self.embedding(indices)
+        return self.projector(embs)
+
+class ActionEncoder2(nn.Module):
+    def __init__(self, latent_dim, model_name, tokenizer_name, device):
+        super(ActionEncoder2, self).__init__()
 
         self.device = device
         self.model = BertModel.from_pretrained(model_name)
@@ -95,83 +117,35 @@ class ActionEncoder(nn.Module):
 
         return projected_embeddings
 
-class CachedActionEncoder(nn.Module):
-    def __init__(self, latent_dim, model_name, tokenizer_name, device):
-        super(ActionEncoder, self).__init__()
-
-        self.device = device
-        self.model = BertModel.from_pretrained(model_name)
-        self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
-        self.projector = nn.Sequential(
-            nn.Linear(768, 512),
-            nn.ReLU(),
-            nn.Linear(512, latent_dim)
-        )
-        self.bert_cache = {}  # Cache to store BERT embeddings
-
-    def forward(self, actions):
-        # Initialize list to hold BERT embeddings in order of input actions
-        bert_embeddings = [None] * len(actions)
-        uncached_indices = []
-        uncached_actions = []
-
-        # Check cache and collect uncached actions
-        for idx, action in enumerate(actions):
-            if action in self.bert_cache:
-                bert_embeddings[idx] = self.bert_cache[action]
-            else:
-                uncached_indices.append(idx)
-                uncached_actions.append(action)
-
-        # Process uncached actions in a batch
-        if uncached_actions:
-            # Tokenize with fixed padding and truncation
-            inputs = self.tokenizer(
-                uncached_actions,
-                padding='max_length',
-                truncation=True,
-                max_length=512,
-                return_tensors="pt"
-            )
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-            new_embeddings = outputs.last_hidden_state[:, 0, :]
-
-            # Update cache and fill the corresponding positions
-            for action, emb in zip(uncached_actions, new_embeddings):
-                self.bert_cache[action] = emb.detach().clone()  # Detach and clone to prevent gradient tracking
-
-            for idx, emb in zip(uncached_indices, new_embeddings):
-                bert_embeddings[idx] = emb
-
-        # Convert list to tensor and ensure it's on the correct device
-        bert_embeddings_tensor = torch.stack(bert_embeddings).to(self.device)
-
-        # Project embeddings using the current projector (allows gradient flow through projector)
-        projected_embeddings = self.projector(bert_embeddings_tensor)
-
-        return projected_embeddings
-    
 class ActionDecoder(nn.Module):
-    def __init__(self, latent_dim, model_name, tokenizer_name, device):
+    def __init__(self, latent_dim, act2id, device):
         super(ActionDecoder, self).__init__()
 
         self.device = device
 
-        self.encoder = ActionEncoder(latent_dim, model_name, tokenizer_name, device).to(device)
+        self.encoder = ActionEncoder(
+            vocab_size=10000,
+            emb_dim=512,
+            latent_dim=latent_dim,
+            act2id=act2id,
+            device=device
+        )
 
+        self.mlp = nn.Sequentail(
+            nn.Linear(latent_dim * 2, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
+        )
 
     def forward(self, valid_actions, zt):
 
-        actions_embeddings = self.encoder.forward(valid_actions)
+        action_embeddings = self.encoder.forward(valid_actions)
 
-        eps = 1e-8
-        actions_norm = F.normalize(actions_embeddings + eps, p=2, dim=1)
-        zt_norm = F.normalize(zt + eps, p=2, dim=0)
+        zt_repeated = zt.unsqueeze(0).expand(len(valid_actions), -1)
 
-        scores = torch.matmul(actions_norm, zt_norm)        
+        concat = torch.cat([zt_repeated, action_embeddings], dim=1)
+
+        scores = self.mlp(concat).squeeze(1)
 
         return scores
     
@@ -182,23 +156,24 @@ class ActionDecoder(nn.Module):
         probs = F.softmax(scores, dim=0)
         log_probs = F.log_softmax(scores, dim=0)
 
-        if torch.rand(1).item() < epsilon:
-            action = torch.randint(0, len(valid_actions), (1,)).item()
-        else:
-            action = torch.multinomial(probs, 1).item()        
+        action = torch.multinomial(probs, 1).item()        
 
         return valid_actions[action], log_probs[action], probs
 
 class Critic(nn.Module):
-    def __init__(self, latenet_dim):
+    def __init__(self, latent_dim):
         super(Critic, self).__init__()
-        self.fc = nn.Linear(latenet_dim, 1)
+        self.fc = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim // 2),
+            nn.ReLU(),
+            nn.Linear(latent_dim // 2, 1)
+        )
 
     def forward(self, x):
         return self.fc(x)
 
 class IBKG(nn.Module):
-    def __init__(self, max_nodes, feat_dim, rel2id, node2id, hidden_dim, repr_dim, latent_dim, actor_model_name, actor_tokenizer_name, device):
+    def __init__(self, max_nodes, feat_dim, rel2id, node2id, act2id, hidden_dim, repr_dim, latent_dim, actor_model_name, actor_tokenizer_name, device):
         super(IBKG, self).__init__()
         self.device = device
 
@@ -282,7 +257,6 @@ class NOIBKG(nn.Module):
 
         action, log_prob, probs = self.action_decoder.get_action(valid_actions, graph_repr, epsilon=epsilon)
 
-        # Fixed: Using graph_repr instead of undefined z_t
         value = self.critic.forward(graph_repr)
 
         return action, log_prob, value, probs
