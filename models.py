@@ -149,9 +149,11 @@ class ActionDecoder(nn.Module):
 
         return scores
     
-    def get_action(self, valid_actions, zt, epsilon=0.1):
+    def get_action(self, valid_actions, zt, epsilon=0.1, temperature=1.0):
         scores = self.forward(valid_actions, zt)
         scores = torch.where(torch.isfinite(scores), scores, torch.tensor(-1e8, device=scores.device))
+
+        scores = scores / temperature
 
         probs = F.softmax(scores, dim=0)
         log_probs = F.log_softmax(scores, dim=0)
@@ -240,7 +242,7 @@ class NOIBKG(nn.Module):
         self.action_decoder = ActionDecoder(repr_dim, act2id, device).to(device)
         self.critic = Critic(repr_dim).to(device)
 
-    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02):
+    def forward(self, valid_actions, beta=1.0, epsilon=0.1, ib_reg=0.02, temperature=1.0):
         node_ids = list(range(len(self.kg.node_mapping)))
         node_ids_tensor = torch.LongTensor(node_ids).to(self.device)
         node_feat = self.node_embedding(node_ids_tensor)
@@ -255,7 +257,7 @@ class NOIBKG(nn.Module):
 
         graph_repr = self.attention.forward(h_t)
 
-        action, log_prob, probs = self.action_decoder.get_action(valid_actions, graph_repr, epsilon=epsilon)
+        action, log_prob, probs = self.action_decoder.get_action(valid_actions, graph_repr, epsilon=epsilon, temperature=temperature)
 
         value = self.critic.forward(graph_repr)
 

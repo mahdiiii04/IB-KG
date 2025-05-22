@@ -22,7 +22,9 @@ train:
   beta_end : 0.05
   epsilon_start : 0.1
   epsilon_end : 0.001
-  learning_rate : 0.001
+  temperature_start : 5.0
+  temperature_start : 0.5
+  learning_rate : 0.00001
   batch_size : 32
   buffer_capacity : 10000
   replay_frequency : 4

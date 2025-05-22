@@ -148,7 +148,8 @@ class IBKG_Trainer:
         for episode_data in self.trajectory_buffer:
             serialized_episode = {
                 "episode_id": episode_data["episode_id"],
-                "steps": []
+                "steps": [],
+                "reward": episode_data["reward"]
             }
             
             for step in episode_data["steps"]:
@@ -240,7 +241,8 @@ class IBKG_Trainer:
             # Initialize episode trajectory data
             episode_trajectory = {
                 "episode_id": episode + 1,
-                "steps": []
+                "steps": [],
+                "reward": 0
             }
 
             initial_state = self.env.reset()
@@ -345,11 +347,13 @@ class IBKG_Trainer:
                 progress = episode / num_episodes
                 beta = train_params['beta_start'] + (train_params['beta_end'] - train_params['beta_start']) * progress
                 epsilon = train_params['epsilon_start'] + (train_params['epsilon_end'] - train_params['epsilon_start']) * progress
+                temperature = train_params['temperature_start'] + (train_params['temperature_end'] - train_params['temperature_start']) * progress
 
                 action, log_prob, value, probs = self.ibkg.forward(
                     valid_actions=valid_actions,
                     beta=beta,
-                    epsilon=epsilon
+                    epsilon=epsilon,
+                    temperature=temperature
                 )
                 # Store step trajectory data
                 step_trajectory = {
@@ -418,6 +422,7 @@ class IBKG_Trainer:
             self.buffer.push(buffer_episode)    
 
             # Add episode trajectory to buffer
+            episode_trajectory["reward"] = episode_reward
             self.trajectory_buffer.append(episode_trajectory)
 
             loss, policy_loss, value_loss = self.compute_loss(values, log_probs, rewards, dones)
