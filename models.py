@@ -92,30 +92,6 @@ class ActionEncoder(nn.Module):
         embs = self.embedding(indices)
         return self.projector(embs)
 
-class ActionEncoder2(nn.Module):
-    def __init__(self, latent_dim, model_name, tokenizer_name, device):
-        super(ActionEncoder2, self).__init__()
-
-        self.device = device
-        self.model = BertModel.from_pretrained(model_name)
-        self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
-        self.projector = nn.Sequential(
-            nn.Linear(768, 512),
-            nn.ReLU(),
-            nn.Linear(512, latent_dim)
-        )
-
-
-    def forward(self, actions):
-        inputs = {k: v.to(self.device) for k, v in self.tokenizer(actions, padding=True, truncation=True, return_tensors="pt").items()}
-
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-        embeddings = outputs.last_hidden_state[:, 0, :]
-
-        projected_embeddings = self.projector(embeddings)
-
-        return projected_embeddings
 
 class ActionDecoder(nn.Module):
     def __init__(self, latent_dim, act2id, device):

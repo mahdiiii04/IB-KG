@@ -29,4 +29,4 @@ train:
   buffer_capacity : 10000
   replay_frequency : 4
   device : "cuda"
-  hf_repo: "mahdiiiii04/ibkg-run3"
+  hf_repo: "mahdiiiii04/GAE_KG_2"
