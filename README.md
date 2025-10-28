@@ -1,75 +1,38 @@
 # 🧠 Knowledge-Based Reinforcement Learning for Playing Zork
 
-> A research project combining **Reinforcement Learning (RL)**, **Natural Language Processing (NLP)**, and **Knowledge Graphs (KGs)** to build an intelligent agent capable of reasoning and acting in the text-based game **Zork**.
+## Project Overview:
+Text based games represent a testbed for language understanding and decision making in complex scenarios, Zork is one of the most challenging games in that case due to its difficulty even for human players.
+This project aims to design an AI model capable of understanding the game's text, convert it into a meaningful representation (Knowledge Graphs) and decide which action to take based on that representation.
+Inspired by papers such as KG-A2C, this work aims to design a solution from scratch.
 
----
+## Keywords:
+Artificial Intelligence, Natural Language Processing, Knowledge Extraction, Knowledge Graphs (KGs), Reinforcement Learning.
 
-## 📘 Overview
+## Architecture Overview:
+The general adopted idea is to using environment’s observation to build and update a knowledge graph that we embed and pass to the action decoder to select the most appropriate action as seen in the figure:
 
-Text-based games like *Zork* present a unique challenge for RL agents: they must **understand language**, **track world states**, and **plan sequences of actions** based solely on textual descriptions.
+1.Knowledge Extraction (T5-OBSRVR):
+This is a custom module made to extract from the game's text information about location, inventory and surroundings; example:
+- Location : <you, in, forest>
+- Inventory : <you, have, sword>, <you, have torch>
+- Surroundings : <tree, in, forest>
+This module uses three fine-tuned T5 transformers in order to extract each information seperatly and then combines them into one set of triplets in each step.
 
-To address this, we introduce a **Knowledge-Based RL Architecture** where the agent continuously constructs and updates a **Knowledge Graph (KG)** from the game’s text observations.  
-This structured graph representation allows the agent to **reason over objects, relations, and locations**, transforming raw text into an interpretable world model.
+2.Knowledge Graph Construction:
+The previous extracted triplets are used to construct a knowledge graph (KG) that is updated with each step; example:
 
----
+3.Relational Graph Convolutional Network (R-GCN):
+R-GCN is used to convert the KG into meaningful representation that can be used for learning and inference.
 
-## 🧩 Architecture Summary
+4.Learning Part(RL):
+In order to choose the best action for each state, A2C + GAE are used to update the policy and get the optimal decisions.
 
-Our architecture is composed of five major components:
+## Used technologies:
+Pytorch, NetworkX, DGL, jericho
 
-### 1. 🗣️ T5-OBSRVR — Knowledge Extraction
-A fine-tuned **T5 Transformer** serves as a structured knowledge extractor.  
-It converts each textual observation into **triplets** ⟨subject, relation, object⟩, forming the building blocks of the KG.
+## Results:
+The model achieved a near SOTA performance with stable learning curve, This result is particularly interesting because the agent adopts a strategy that combines two separate routes to maximize reward in the first part of the game. With lower exploration, the agent could have converged to a simpler strategy: either obtaining only +5 by collecting the egg, or directly opening the window to enter the house and continuing on that path for a reward of +25. Instead, the agent intentionally deviates from the main route to collect the smaller reward before returning to the primary path, demonstrating a sophisticated understanding of the environment’s reward structure.
 
-| Model | Input | Output |
-|--------|--------|--------|
-| Location Extractor | “You are standing in a forest clearing.” | ⟨you, in, forest⟩ |
-| Inventory Extractor | “You are carrying a lantern.” | ⟨you, have, lantern⟩ |
-| Surroundings Extractor | “There is a tree here.” | ⟨tree, in, forest⟩ |
+## Detailed Report:
+For more implementation detial, feel free to read the report:
 
-Each step also adds **temporal links** such as ⟨new_location, came_from, previous_location⟩, enriching spatial relationships.
-
-These three models were fine-tuned on **TextWorld KG** and **JerichoWorld** datasets for precise triplet generation.
-
----
-
-### 2. 🌐 Grapher — Dynamic Knowledge Graph Construction
-
-The **Grapher module** maintains a coherent, evolving Knowledge Graph that reflects the agent’s understanding of the world.
-
-It:
-- Merges new triplets with the existing graph,  
-- Removes redundant or outdated nodes,  
-- And ensures logical consistency between entities.
-
-The KG thus becomes a **structured state memory** encoding spatial, temporal, and relational information.
-
-<p align="center">
-  <img src="docs/kg_update_example.png" alt="KG Update Example" width="500"/>
-</p>
-
-Implemented using **Deep Graph Library (DGL)**, the KG is fed to a **Relational Graph Convolutional Network (R-GCN)** for representation learning.
-
----
-
-### 3. 🧮 R-GCN — Relational Graph Encoding
-
-The **R-GCN** transforms the KG into a dense graph embedding by aggregating information across connected entities.  
-This representation captures relational semantics and context, allowing the agent to “understand” what objects are relevant at each state.
-
----
-
-### 4. 🎯 Action Scorer & Critic — Decision Layer
-
-- **Action Scorer**: Encodes and ranks valid textual actions using the current KG embedding and attention mechanism.  
-- **Critic**: Estimates the value of the current state for policy updates.
-
-The agent learns via **Generalized Advantage Estimation (GAE)** and a combined **policy–value loss**.
-
----
-
-### 5. 🧭 Intrinsic Motivation
-
-To address **reward sparsity**, we introduced **intrinsic rewards** proportional to knowledge gain:
-```math
-r_intrinsic = 0.1 × T_new + 0.3 × L_new
