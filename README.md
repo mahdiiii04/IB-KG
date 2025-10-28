@@ -38,5 +38,6 @@ The model achieved a near-SOTA performance with a stable learning curve, This re
 
 ## Detailed Report:
 For more implementation detail, feel free to read the report:
-[📄 Download Report (PDF)](./assest/Report.pdf)
+[📄 Download Report (PDF)](./assest/report.pdf)
+
 
